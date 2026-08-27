@@ -16,8 +16,9 @@
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 		<RepositoryUrl>https://github.com/Roshaless/Zen.Scroll</RepositoryUrl>
 		<PackageTags>wpf, scroll, animation, scrollviewer, xaml</PackageTags>
-		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
 	
 	<ItemGroup>
@@ -34,6 +35,11 @@
 			<Visible>false</Visible>
 		</None>
 		<None Include="..\NOTICE.txt">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+			<Visible>false</Visible>
+		</None>
+		<None Include="..\README.md">
 			<Pack>True</Pack>
 			<PackagePath>\</PackagePath>
 			<Visible>false</Visible>
