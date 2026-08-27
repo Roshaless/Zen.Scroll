@@ -9,7 +9,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Zen.Wpf.Scoll\Zen.Wpf.Scoll.csproj" />
+		<ProjectReference Include="..\Zen.Wpf.Scroll\Zen.Wpf.Scroll.csproj" />
 	</ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
 <Solution>
   <Project Path="TestApp/TestApp.csproj" />
-  <Project Path="Zen.Wpf.Scoll/Zen.Wpf.Scoll.csproj" />
+  <Project Path="Zen.Wpf.Scroll/Zen.Wpf.Scroll.csproj" />
 </Solution>
