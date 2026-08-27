@@ -32,5 +32,10 @@
 			<PackagePath>\</PackagePath>
 			<Visible>false</Visible>
 		</None>
+		<None Include="..\NOTICE.txt">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+			<Visible>false</Visible>
+		</None>
 	</ItemGroup>
 </Project>
