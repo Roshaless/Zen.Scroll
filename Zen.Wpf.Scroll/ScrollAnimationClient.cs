@@ -9,7 +9,7 @@ namespace Zen.Scroll;
 public abstract class ScrollAnimationClient
 {
     private readonly ScrollViewer _scrollViewer;
-    private readonly ScrollViewerHost _scrollViewerHost;
+    private readonly ScrollAnimationrHost _animationHost;
     private ScrollAnimation? _animation;
     private bool _isActive;
     private bool _isPaused;
@@ -18,15 +18,14 @@ public abstract class ScrollAnimationClient
 
     public bool IsPaused => _isPaused;
 
-    public Vector MinimumScrollOffset => _scrollViewerHost.MinimumOffset;
+    public Vector MinimumScrollOffset => _animationHost.MinimumOffset;
 
-    public Vector MaximumScrollOffset => _scrollViewerHost.MaximumOffset;
+    public Vector MaximumScrollOffset => _animationHost.MaximumOffset;
 
-    public Vector CurrentOffset => _scrollViewerHost.AnimatedOffset;
+    public Vector CurrentOffset => _animationHost.AnimatedOffset;
 
     public ScrollViewer ScrollViewer => _scrollViewer;
 
-    private bool _isEnabled;
 
     [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "set_HandlesMouseWheelScrolling")]
     private static extern void SetHandlesMouseWheelScrolling(ScrollViewer scrollViewer, bool value);
@@ -34,12 +33,11 @@ public abstract class ScrollAnimationClient
     public ScrollAnimationClient(ScrollViewer scrollViewer)
     {
         _scrollViewer = scrollViewer;
-        _scrollViewerHost = new ScrollViewerHost(_scrollViewer);
+        _animationHost = new ScrollAnimationrHost(_scrollViewer);
     }
 
     public void SetIsEnabled(bool isEnabled)
     {
-        _isEnabled = isEnabled;
         if (isEnabled)
         {
             _scrollViewer.MouseWheel += OnPreviewMouseWheel;
@@ -51,18 +49,18 @@ public abstract class ScrollAnimationClient
             SetHandlesMouseWheelScrolling(_scrollViewer, true);
         }
 
-        _scrollViewerHost.SetIsEnabled(isEnabled);
+        _animationHost.SetIsEnabled(isEnabled);
     }
 
     private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (Keyboard.Modifiers is ModifierKeys.Shift && _scrollViewerHost.CanScroll(Orientation.Horizontal))
+        if (Keyboard.Modifiers is ModifierKeys.Shift && _animationHost.CanScroll(Orientation.Horizontal))
         {
             OnMouseWheel(sender, new(e, new Vector(e.Delta, 0), Orientation.Horizontal));
             return;
         }
 
-        if (_scrollViewerHost.CanScroll(Orientation.Vertical))
+        if (_animationHost.CanScroll(Orientation.Vertical))
         {
             OnMouseWheel(sender, new(e, new Vector(0, e.Delta), Orientation.Vertical));
             return;
@@ -73,7 +71,7 @@ public abstract class ScrollAnimationClient
 
     public void ScrollToOffset(Vector offset)
     {
-        _scrollViewerHost.AnimateScroll(offset);
+        _animationHost.AnimateScroll(offset);
     }
 
     public void Start(ScrollAnimation animation)
@@ -83,7 +81,7 @@ public abstract class ScrollAnimationClient
             _isActive = true;
             _isPaused = false;
             _animation = animation;
-            _scrollViewerHost.BeginAnimation();
+            _animationHost.BeginAnimation();
             CompositionTarget.Rendering += OnRendering;
         }
         else
@@ -105,7 +103,7 @@ public abstract class ScrollAnimationClient
             _isActive = false;
             _isPaused = false;
             _animation = null;
-            _scrollViewerHost.EndAnimation();
+            _animationHost.EndAnimation();
             CompositionTarget.Rendering -= OnRendering;
         }
     }

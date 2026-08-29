@@ -1,12 +1,14 @@
-﻿using System.Windows;
+﻿using System.Diagnostics;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace Zen.Scroll;
 
-internal sealed class ScrollViewerHost
+internal sealed class ScrollAnimationrHost
 {
     public static Binding DefaultHorizontalOffsetBinding = new()
     {
@@ -24,6 +26,9 @@ internal sealed class ScrollViewerHost
 
     private readonly ScrollViewer _scrollViewer;
     private readonly ScrollContentTracker _tracker;
+    private readonly DispatcherTimer _dispatcherTimer;
+    private bool _hasPendingArrange;
+    private long _lastScrollActivityTick;
 
     private TranslateTransform _translateTransform;
 
@@ -45,11 +50,32 @@ internal sealed class ScrollViewerHost
         _currentOffset.X + -_translateTransform.X,
         _currentOffset.Y + -_translateTransform.Y);
 
-    public ScrollViewerHost(ScrollViewer scrollViewer)
+    public ScrollAnimationrHost(ScrollViewer scrollViewer)
     {
         _scrollViewer = scrollViewer;
         _tracker = new ScrollContentTracker(_scrollViewer);
         _translateTransform = new TranslateTransform();
+        _dispatcherTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(60), DispatcherPriority.Render, (s, e) =>
+        {
+            if (_hasPendingArrange)
+            {
+                _hasPendingArrange = false;
+                LogicalScroll(AnimatedOffset);
+                Debug.WriteLine(AnimatedOffset);
+            }
+
+            if (s is DispatcherTimer timer)
+            {
+                if (Environment.TickCount64 - _lastScrollActivityTick >= 160)
+                {
+                    _hasPendingArrange = false;
+                    if (timer.IsEnabled)
+                    {
+                        timer.Stop();
+                    }
+                }
+            }
+        }, _scrollViewer.Dispatcher);
     }
 
     public void SetIsEnabled(bool isEnabled)
@@ -191,10 +217,22 @@ internal sealed class ScrollViewerHost
         _tracker.HorizontalScrollBar.Value = offset.X;
         _tracker.VerticalScrollBar.Value = offset.Y;
 
-        const double SmallChange = 16d;
-        if (Math.Abs(transformOffset.Y) > SmallChange ||
-            Math.Abs(transformOffset.X) > SmallChange)
-            LogicalScroll(AnimatedOffset);
+        RequestArrangeOnScroll();
+        //const double SmallChange = 60d;
+        //if (Math.Abs(transformOffset.Y) > SmallChange ||
+        //    Math.Abs(transformOffset.X) > SmallChange)
+        //    LogicalScroll(AnimatedOffset);
+    }
+
+    private void RequestArrangeOnScroll()
+    {
+        _hasPendingArrange = true;
+        _lastScrollActivityTick = Environment.TickCount64;
+
+        if (!_dispatcherTimer.IsEnabled)
+        {
+            _dispatcherTimer.Start();
+        }
     }
 
     public void LogicalScroll(Vector offset)

@@ -15,7 +15,7 @@ internal class ScrollAnimationController : ScrollAnimationClient
         VirtualizingPanel.SetVirtualizationMode(scrollViewer, VirtualizationMode.Recycling);
     }
 
-    protected override void OnMouseWheel(object sender, ScrollAnimationMouseWheelEventArgs e)
+    protected override void OnMouseWheel(object? sender, ScrollAnimationMouseWheelEventArgs e)
     {
         if (e.Handled)
             return;
