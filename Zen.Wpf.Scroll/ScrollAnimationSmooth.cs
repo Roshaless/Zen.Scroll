@@ -1,149 +1,88 @@
 ﻿using System.Windows;
-using System.Windows.Input;
-
 
 namespace Zen.Scroll;
 
-internal class ScrollAnimationSmooth(ScrollAnimationClient scrollClient) : ScrollAnimation(scrollClient)
+public sealed class ScrollAnimationSmooth : ScrollAnimation
 {
-    private const double MaxDuration = 1000d;
-    private const double MinDuration = 16d;
-    private const double FastDuration = 167d;
-    private const double DefaultDuration = 200d;
+    private const double MaxInitialVelocity = 8000;
+    private const double MillisecondsPerSecond = 1000;
+    private const double DefaultTimeConstantMs = 120;
+    private const double MinDurationOpposite = 70;
+    private const double MinDurationSame = 100;
+    private Vector PreviousTouchPadDelta;
+    private Vector StartOffset;
+    private Vector DestinationOffset;
+    private Vector InitialVelocity;
+    private double CurrentVelocity;
+    private double TimeConstantSeconds;
 
-    private readonly UnitBezier _bezier = new(0, 1, 0, 1);
-    private Vector _startOffset;
-    private Vector _destinationOffset;
-    private Vector _scrolledOffset;
-    private Vector _scrollDelta;
-    private Vector _scrollVelocity;
-    private Vector _lastMouseWheelDelta;
-    private double _duration;
-
-    public override double Duration => _duration;
-
-    public void ScrollBy(Vector delta)
+    public override void ScrollBy(Vector delta)
     {
-        Scroll(delta);
-    }
-
-    public void ScrollToDestination(Vector fromOffset, Vector destinationOffset)
-    {
-        Scroll(fromOffset, destinationOffset);
-    }
-
-    public void ScrollWithWheelDelta(Vector delta)
-    {
-        static bool IsSnapScroll(Vector value) =>
-            value.X % Mouse.MouseWheelDeltaForOneLine != 0 ||
-            value.Y % Mouse.MouseWheelDeltaForOneLine != 0;
-
-
-        if (IsSnapScroll(delta))
+        if (IsTouchPadScroll(delta))
         {
-            var currentVelocity = Vector.Divide(delta, TimeSinceStart().TotalMilliseconds);
-            var speedRadio = Math.Clamp(0.1 + (1 - 0.2) / (1.0 + 0.3 * currentVelocity.Length), 0, 1);
-            var scalar = Math.Max(Math.Abs(currentVelocity.Length), 1d);
+            if ((PreviousTouchPadDelta * delta) < 0)
+            {
+                ScrollBy(delta, MinDurationOpposite);
+            }
+            else
+            {
+                var velocity = delta.Length / MinDurationSame;
+                var value = DefaultTimeConstantMs - (CurrentVelocity + velocity) / DefaultTimeConstantMs;
+                ScrollBy(delta, Math.Clamp(value, MinDurationSame, DefaultTimeConstantMs));
+            }
 
-            _bezier.SetParameters(0, 1 - speedRadio, Math.Clamp(1 - 1 / scalar, 0, 0.42), 1);
-            Scroll(delta, Math.Clamp((MaxDuration - ((MaxDuration - Mouse.MouseWheelDeltaForOneLine) * speedRadio)) / scalar, MinDuration, MaxDuration));
+            PreviousTouchPadDelta = delta;
         }
         else
         {
-            _lastMouseWheelDelta = delta;
-            Scroll(delta);
+            ScrollBy(delta, DefaultTimeConstantMs);
         }
     }
 
-    private void Scroll(Vector delta)
+    public override void ScrollBy(Vector delta, double duration)
     {
-        if (delta.Length != 0)
-        {
-            var isActive = IsActive;
-            var fromOffset = ScrollClient.CurrentOffset;
-            var destinationOffset = isActive ? _destinationOffset - delta : fromOffset - delta;
+        var fromOffset = ScrollClient.CurrentOffset;
+        var destinationOffset = (ScrollClient.IsActive ? DestinationOffset - delta : fromOffset - delta)
+             .ConstrainedBetween(ScrollClient.MinimumScrollOffset, ScrollClient.MaximumScrollOffset);
 
-            Scroll(fromOffset, destinationOffset);
+        if (destinationOffset != fromOffset)
+        {
+            var durationSeconds = duration / MillisecondsPerSecond;
+            var initialVelocity = (destinationOffset - fromOffset) / durationSeconds;
+            StartScroll(fromOffset, destinationOffset, initialVelocity, durationSeconds);
         }
     }
 
-    private void Scroll(Vector delta, double duration)
+    private void StartScroll(Vector fromOffset, Vector destinationOffset, Vector initialVelocity, double timeConstantSeconds)
     {
-        if (delta.Length != 0)
+        var velocity = Math.Abs(initialVelocity.Length);
+        if (velocity > MaxInitialVelocity)
         {
-            var isActive = IsActive;
-            var fromOffset = ScrollClient.CurrentOffset;
-            var destinationOffset = isActive ? _destinationOffset - delta : fromOffset - delta;
-
-            PrivateScroll(fromOffset, destinationOffset, duration);
+            initialVelocity = Vector.Multiply(initialVelocity, MaxInitialVelocity / velocity);
         }
-    }
 
-
-    private void Scroll(Vector fromOffset, Vector destinationOffset)
-    {
-        var isActive = IsActive;
-        if (isActive)
-        {
-
-            var state = Math.Min(Vector.Divide(_scrolledOffset, _scrollDelta.Length).Length, 1);
-            _bezier.SetParameters(0.42d * (1d - state), 0d, 0.52d + 0.22 * state, 1d);
-            PrivateScroll(fromOffset, destinationOffset, FastDuration);
-        }
-        else
-        {
-            _bezier.SetParameters(0.42d, 0d, 0.58d, 1d);
-            PrivateScroll(fromOffset, destinationOffset, DefaultDuration);
-        }
-    }
-
-    private void PrivateScroll(Vector fromOffset, Vector destinationOffset, double duration)
-    {
-        var isActive = IsActive;
-        if (isActive)
-            Pause();
-
-        _startOffset = fromOffset;
-        _destinationOffset = destinationOffset.ConstrainedBetween(
-            ScrollClient.MinimumScrollOffset, ScrollClient.MaximumScrollOffset);
-
-        if (_startOffset == _destinationOffset)
-            return;
-
-        _duration = duration;
-        if (_duration <= 0d)
-            return;
-
-        _scrolledOffset = default;
-        _scrollDelta = _destinationOffset - _startOffset;
-
-        var velocity = Vector.Divide(_scrollDelta, TimeSinceStart().TotalMilliseconds);
-        _scrollVelocity = new Vector(_scrollVelocity.X + Math.Abs(velocity.X), _scrollVelocity.Y + Math.Abs(velocity.Y));
-
-        ScrollClient.ScrollToOffset(_startOffset);
+        StartOffset = fromOffset;
+        DestinationOffset = destinationOffset;
+        InitialVelocity = initialVelocity;
+        TimeConstantSeconds = timeConstantSeconds;
+        ScrollClient.UpdateScrollTarget(fromOffset);
         Start();
     }
 
     protected override void OnStop()
     {
-        _scrollVelocity = new Vector(-1500, -1500);
+        InitialVelocity = default;
+        CurrentVelocity = default;
+        PreviousTouchPadDelta = default;
     }
 
     public override bool ServiceAnimation(TimeSpan elapsedTime)
     {
-        var elapsedMs = elapsedTime.TotalMilliseconds;
-        var progress = Math.Min(elapsedMs / _duration, 1.0);
-        progress = _bezier.Solve(progress, elapsedMs);
-
-        var dx = (progress * _scrollDelta.X);
-        var dy = (progress * _scrollDelta.Y);
-        var cur = ScrollClient.CurrentOffset;
-
-        ScrollClient.ScrollToOffset(new Vector(
-            cur.X + dx - _scrolledOffset.X,
-            cur.Y + dy - _scrolledOffset.Y));
-
-        _scrolledOffset = new(dx, dy);
-        return elapsedMs <= _duration;
+        var elapsedSeconds = elapsedTime.TotalSeconds;
+        var decay = Math.Exp(-elapsedSeconds / TimeConstantSeconds);
+        var newOffset = StartOffset + InitialVelocity * TimeConstantSeconds * (1 - decay);
+        CurrentVelocity = Math.Abs((InitialVelocity * decay).Length);
+        ScrollClient.UpdateScrollTarget(newOffset);
+        return elapsedSeconds <= 1;
     }
 }

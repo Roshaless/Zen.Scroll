@@ -3,7 +3,7 @@ using System.Windows;
 
 namespace Zen.Scroll;
 
-public static class ExtensionMethods
+internal static class ExtensionMethods
 {
     extension(FrameworkElement element)
     {
@@ -12,7 +12,7 @@ public static class ExtensionMethods
         public T GetElement<T>(string name) where T : DependencyObject => Unsafe.As<T>(GetTemplateChild(element, name));
 
         [UnsafeAccessor(UnsafeAccessorKind.Method)]
-        private static extern DependencyObject GetTemplateChild(FrameworkElement _, string __);
+        private static extern DependencyObject GetTemplateChild(FrameworkElement e, string name);
     }
 
     extension(Vector vector)
@@ -23,38 +23,30 @@ public static class ExtensionMethods
                 Math.Max(min.X, Math.Min(max.X, vector.X)),
                 Math.Max(min.Y, Math.Min(max.Y, vector.Y)));
         }
-    }
 
-    extension(Size)
-    {
-        public static Size operator +(Size a, Vector b)
+        public Vector WithX(double x)
         {
-            return new(a.Width + b.X, a.Height + b.Y);
+            return new(x, vector.Y);
         }
 
-        public static Size operator -(Size a, Vector b)
+        public Vector WithX(Vector vector1)
         {
-            return new(a.Width + b.X, a.Height + b.Y);
+            return new(vector1.X, vector.Y);
         }
 
-        public static Size operator +(Size a, Size b)
+        public Vector WithY(double y)
         {
-            return new(a.Width + b.Width, a.Height + b.Height);
+            return new(vector.X, y);
         }
 
-        public static Size operator -(Size a, Size b)
+        public Vector WithY(Vector vector1)
         {
-            return new(a.Width + b.Width, a.Height + b.Height);
+            return new(vector.X, vector1.Y);
         }
 
-        public static bool operator <(Size a, Size b)
+        public static Vector operator /(Vector vector1, Vector vector2)
         {
-            return a.Width < b.Width && a.Height < b.Height;
-        }
-
-        public static bool operator >(Size a, Size b)
-        {
-            return a.Width > b.Width && a.Height > b.Height;
+            return new(vector1.X / vector2.X, vector1.Y / vector2.Y);
         }
     }
 }
