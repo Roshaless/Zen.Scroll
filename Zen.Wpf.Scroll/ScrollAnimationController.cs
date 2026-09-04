@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -124,6 +125,14 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
     }
 
 
+#if NET8_0_OR_GREATER
     [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "set_HandlesMouseWheelScrolling")]
     private static extern void SetHandlesMouseWheelScrolling(ScrollViewer scrollViewer, bool value);
+#else
+    private static void SetHandlesMouseWheelScrolling(ScrollViewer scrollViewer, bool value)
+    {
+        var internalFlag = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        typeof(ScrollViewer).GetMethod("set_HandlesMouseWheelScrolling", internalFlag).Invoke(scrollViewer, [value]);
+    }
+#endif
 }

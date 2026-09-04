@@ -2,10 +2,12 @@
 
 	<PropertyGroup>
 		<OutputType>WinExe</OutputType>
-		<TargetFramework>net10.0-windows</TargetFramework>
+		<TargetFrameworks>net462;net10.0-windows</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<LangVersion>preview</LangVersion>
 		<UseWPF>true</UseWPF>
+		<Platform>x64</Platform>
 	</PropertyGroup>
 
 	<ItemGroup>

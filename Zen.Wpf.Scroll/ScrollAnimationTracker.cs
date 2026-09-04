@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
@@ -61,8 +60,6 @@ internal sealed class ScrollAnimationTracker
 
     public ScrollAnimationTracker(ScrollViewer scrollViewer)
     {
-        Debug.Assert(scrollViewer is not null);
-
         RootScrollViewer = scrollViewer;
         ContentPropertyDescriptor = DependencyPropertyDescriptor.FromProperty(
             ContentPresenter.ContentProperty, typeof(ScrollContentPresenter));
