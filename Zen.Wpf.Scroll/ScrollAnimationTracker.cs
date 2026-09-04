@@ -149,6 +149,7 @@ internal sealed class ScrollAnimationTracker
 
     public void Initialize()
     {
+        RootScrollViewer.Loaded += OnLoaded;
         RootScrollViewer.SizeChanged += OnLoaded;
         RootScrollViewer.Unloaded += OnUnloaded;
 
@@ -157,6 +158,7 @@ internal sealed class ScrollAnimationTracker
 
     public void Uninitialize()
     {
+        RootScrollViewer.Loaded -= OnLoaded;
         RootScrollViewer.SizeChanged -= OnLoaded;
         RootScrollViewer.Unloaded -= OnUnloaded;
 
