@@ -86,6 +86,17 @@ internal static class ExtensionMethods
                 Math.Max(min.Y, Math.Min(max.Y, vector.Y)));
         }
 
+        public Vector ValidOr(Vector fallback)
+        {
+            static bool IsValidValue(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+            return new(IsValidValue(vector.X) ? vector.X : fallback.X, IsValidValue(vector.Y) ? vector.Y : fallback.Y);
+        }
+
+        public Vector ScaledBy(Vector factor)
+        {
+            return new(vector.X * factor.X, vector.Y * factor.Y);
+        }
+
         public Vector WithX(double x)
         {
             return new(x, vector.Y);
@@ -110,5 +121,24 @@ internal static class ExtensionMethods
         {
             return new(vector1.X / vector2.X, vector1.Y / vector2.Y);
         }
+
+        public static Vector operator *(Vector vector1, Vector vector2)
+        {
+            return new(vector1.X * vector2.X, vector1.Y * vector2.Y);
+        }
+
+        public static bool operator <(Vector vector1, Vector vector2)
+        {
+            return vector1.X < vector2.X && vector1.Y < vector2.Y;
+        }
+        public static bool operator >(Vector vector1, Vector vector2)
+        {
+            return vector1.X > vector2.X && vector1.Y > vector2.Y;
+        }
+    }
+
+    extension(Point self)
+    {
+        public Vector ToVector() => new(self.X, self.Y);
     }
 }

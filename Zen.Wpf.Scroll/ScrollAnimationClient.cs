@@ -8,15 +8,19 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
 {
     protected ScrollViewer RootScrollViewer { get; } = scrollViewer;
 
+    protected List<ScrollAnimation> ActiveAnimations { get; } = [];
+
     public abstract Vector MinimumScrollOffset { get; }
 
     public abstract Vector MaximumScrollOffset { get; }
 
     public abstract Vector CurrentOffset { get; }
 
+    public abstract Vector CurrentScale { get; }
+
     public bool IsActive { get; private set; }
 
-    public ScrollAnimation? Animation { get; set; }
+    public abstract void UpdateScaleTarget(Vector scale);
 
     public abstract void UpdateScrollTarget(Vector offset);
 
@@ -32,29 +36,40 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
 
     public void Start(ScrollAnimation animation)
     {
-        if (IsActive)
+        if (ActiveAnimations.Contains(animation) is not true)
         {
-            if (Animation == animation)
-            {
-                return;
-            }
-
-            Stop();
+            ActiveAnimations.Add(animation);
         }
 
-        IsActive = true;
-        Animation = animation;
+        if (IsActive is not true && ActiveAnimations.Count > 0)
+        {
+            IsActive = true;
+            OnStart();
+        }
+    }
 
-        OnStart();
+    public void Stop(ScrollAnimation animation)
+    {
+        if (ActiveAnimations.Remove(animation) is not true)
+            return;
+
+        if (ActiveAnimations.Count == 0)
+        {
+            IsActive = false;
+            Stop();
+        }
     }
 
     public void Stop()
     {
-        if (IsActive)
+        foreach (var animation in ActiveAnimations)
         {
-            IsActive = false;
-            OnStop();
+            animation.Stop();
         }
+
+        ActiveAnimations.Clear();
+        IsActive = false;
+        OnStop();
     }
 
     private void OnRendering(object? sender, EventArgs e)
@@ -62,11 +77,11 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
         if (IsActive is not true)
             return;
 
-        var animation = Animation;
-        if (animation is null)
-            return;
-
-        if (!animation.ServiceAnimation(animation.TimeSinceStart()))
-            animation.Stop();
+        for (var i = 0; i < ActiveAnimations.Count; i++)
+        {
+            var animation = ActiveAnimations[i];
+            if (animation.ServiceAnimation(animation.TimeSinceStart()) is not true)
+                animation.Stop();
+        }
     }
 }

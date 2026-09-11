@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -11,16 +10,29 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
 {
     private const int ScrollUpdateIntervalMs = 40;
     private const int ScrollUpdateIdleTimeoutMs = 160;
+    private const double ZoomWheelSensitivity = 600d;
     private readonly ScrollAnimationTracker Tracker;
     private readonly DispatcherTimer ScrollUpdateTimer;
     private long LastScrollActivityTimestamp;
     private bool HasPendingScrollUpdate;
+
+    public ScrollAnimation? ZoomAnimation
+    {
+        get; set => field = SwapAnimation(field, value);
+    }
+
+    public ScrollAnimation? ScrollAnimation
+    {
+        get; set => field = SwapAnimation(field, value);
+    }
 
     public override Vector MinimumScrollOffset => default;
 
     public override Vector MaximumScrollOffset => Tracker.ScrollableOffset;
 
     public override Vector CurrentOffset => Tracker.AnimatedOffset;
+
+    public override Vector CurrentScale => Tracker.ContentScale;
 
     public ScrollAnimationController(ScrollViewer scrollViewer) : base(scrollViewer)
     {
@@ -34,6 +46,18 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
             Interval = TimeSpan.FromMilliseconds(ScrollUpdateIntervalMs),
         };
         ScrollUpdateTimer.Tick += OnScrollUpdateTimerTick;
+    }
+
+    private ScrollAnimation? SwapAnimation(ScrollAnimation? oldValue, ScrollAnimation? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.Stop();
+            oldValue.InternalScrollClient = null;
+        }
+
+        newValue?.InternalScrollClient = this;
+        return newValue;
     }
 
     private void OnScrollUpdateTimerTick(object? sender, EventArgs e)
@@ -72,7 +96,7 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
 
     protected override void OnStart()
     {
-        Tracker.EnsureInitialized();
+        Tracker.SyncScrollableOffset();
         RequestScrollUpdate();
         base.OnStart();
     }
@@ -83,44 +107,61 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         StopScrollUpdateTimer();
         base.OnStop();
     }
+
     public override void UpdateScrollTarget(Vector offset)
     {
         Tracker.AnimateScrollTo(offset);
+    }
+
+    public override void UpdateScaleTarget(Vector scale)
+    {
+        Tracker.SetContentScale(scale);
     }
 
     public void SetIsEnabled(bool isEnabled)
     {
         if (isEnabled)
         {
-            RootScrollViewer.MouseWheel += OnPreviewMouseWheel;
+            RootScrollViewer.MouseWheel -= OnMouseWheel;
+            RootScrollViewer.MouseWheel += OnMouseWheel;
             SetHandlesMouseWheelScrolling(RootScrollViewer, false);
             Tracker.Initialize();
         }
         else
         {
-            RootScrollViewer.MouseWheel -= OnPreviewMouseWheel;
+            RootScrollViewer.MouseWheel -= OnMouseWheel;
             SetHandlesMouseWheelScrolling(RootScrollViewer, true);
             Tracker.Uninitialize();
         }
     }
 
-    private void OnPreviewMouseWheel(object? sender, MouseWheelEventArgs e)
+    private void OnMouseWheel(object? sender, MouseWheelEventArgs e)
     {
-        if (e.Handled)
+        if (e.Handled || Tracker.IsInitialized is not true)
             return;
+
+        if (Keyboard.Modifiers is ModifierKeys.Control && Tracker.CanZoom)
+        {
+            e.Handled = true;
+            ScrollAnimation?.Stop();
+            Tracker.ContentScaleCenter = e.GetPosition(RootScrollViewer).ToVector();
+            ZoomAnimation?.ScrollBy(new Vector(e.Delta, e.Delta) / ZoomWheelSensitivity);
+            return;
+        }
 
         if (Keyboard.Modifiers is ModifierKeys.Shift && Tracker.CanHorizontalScroll)
         {
             e.Handled = true;
-            Animation?.ScrollBy(new Vector(e.Delta, 0));
+            ZoomAnimation?.Stop();
+            ScrollAnimation?.ScrollBy(new Vector(e.Delta, 0));
             return;
         }
 
         if (Tracker.CanVerticallyScroll)
         {
             e.Handled = true;
-            Animation?.ScrollBy(new Vector(0, e.Delta));
-            return;
+            ZoomAnimation?.Stop();
+            ScrollAnimation?.ScrollBy(new Vector(0, e.Delta));
         }
     }
 

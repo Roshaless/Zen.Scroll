@@ -15,7 +15,7 @@ public abstract class ScrollAnimation
         get => InternalScrollClient ?? throw new InvalidOperationException("ScrollClient is not set.");
     }
 
-    public bool IsActive => ScrollClient.IsActive;
+    public bool IsActive { get; private set; }
 
     public long StartTimestamp { get; private set; }
 
@@ -25,6 +25,10 @@ public abstract class ScrollAnimation
 
     public void Start()
     {
+        if (InternalScrollClient is null)
+            throw new InvalidOperationException("ScrollClient is not set.");
+
+        IsActive = true;
         StartTimestamp = Stopwatch.GetTimestamp();
         ScrollClient.Start(this);
         OnStart();
@@ -32,7 +36,11 @@ public abstract class ScrollAnimation
 
     public void Stop()
     {
-        ScrollClient.Stop();
+        if (IsActive is not true)
+            return;
+
+        IsActive = false;
+        ScrollClient.Stop(this);
         OnStop();
     }
 
@@ -68,14 +76,14 @@ public abstract class ScrollAnimation
 
         if (e.NewValue is true)
         {
-            controller.Animation ??= new ScrollAnimationSmooth();
-            controller.Animation.InternalScrollClient = controller;
+            controller.ZoomAnimation ??= new ZoomAnimationSmooth();
+            controller.ScrollAnimation ??= new ScrollAnimationSmooth();
             controller.SetIsEnabled(true);
         }
         else
         {
-            controller.Animation?.InternalScrollClient = null;
-            controller.Animation = null;
+            controller.ZoomAnimation = null;
+            controller.ScrollAnimation = null;
             controller.SetIsEnabled(false);
         }
     }
