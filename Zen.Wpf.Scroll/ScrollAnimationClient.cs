@@ -8,7 +8,7 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
 {
     protected ScrollViewer RootScrollViewer { get; } = scrollViewer;
 
-    protected List<ScrollAnimation> ActiveAnimations { get; } = [];
+    private readonly List<ScrollAnimation> ActiveAnimations = [];
 
     public abstract Vector MinimumScrollOffset { get; }
 
@@ -22,7 +22,7 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
 
     public abstract void UpdateScaleTarget(Vector scale);
 
-    public abstract void UpdateScrollTarget(Vector offset);
+    public abstract void UpdateScrollDelta(Vector delta);
 
     protected virtual void OnStart()
     {
@@ -41,7 +41,7 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
             ActiveAnimations.Add(animation);
         }
 
-        if (IsActive is not true && ActiveAnimations.Count > 0)
+        if (IsActive is not true)
         {
             IsActive = true;
             OnStart();
@@ -55,19 +55,26 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
 
         if (ActiveAnimations.Count == 0)
         {
-            IsActive = false;
             Stop();
         }
     }
 
     public void Stop()
     {
-        foreach (var animation in ActiveAnimations)
+        // Iterate backwards: animation.Stop() removes itself from the list via Stop(animation).
+        // Do not use "while (Count > 0)": a stopped animation does not remove itself
+        // (ScrollAnimation.Stop returns early when inactive), so that loop could never terminate.
+        for (var i = ActiveAnimations.Count - 1; i >= 0; i--)
         {
-            animation.Stop();
+            ActiveAnimations[i].Stop();
         }
 
         ActiveAnimations.Clear();
+
+        // The last animation's stop re-enters this method through Stop(animation) and already
+        // finished the teardown; without this guard OnStop would fire twice.
+        if (IsActive is not true) return;
+
         IsActive = false;
         OnStop();
     }
@@ -77,11 +84,15 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
         if (IsActive is not true)
             return;
 
-        for (var i = 0; i < ActiveAnimations.Count; i++)
+        for (var i = ActiveAnimations.Count - 1; i >= 0; i--)
         {
             var animation = ActiveAnimations[i];
             if (animation.ServiceAnimation(animation.TimeSinceStart()) is not true)
                 animation.Stop();
         }
+
+        OnFrameRendered();
     }
+
+    protected virtual void OnFrameRendered() { }
 }

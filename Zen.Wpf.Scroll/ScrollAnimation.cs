@@ -8,12 +8,17 @@ namespace Zen.Scroll;
 
 public abstract class ScrollAnimation
 {
+    // Exponential decay never truly reaches zero; use this as the common stop condition.
+    protected const double MaxAnimationSeconds = 1d;
+
+    protected const double MillisecondsPerSecond = 1000d;
+
     internal ScrollAnimationClient? InternalScrollClient;
 
-    protected ScrollAnimationClient ScrollClient
-    {
-        get => InternalScrollClient ?? throw new InvalidOperationException("ScrollClient is not set.");
-    }
+    protected ScrollAnimationClient ScrollClient =>
+        InternalScrollClient ?? throw new InvalidOperationException("ScrollClient is not set.");
+
+    protected bool IsAttached => InternalScrollClient is not null;
 
     public bool IsActive { get; private set; }
 
@@ -23,11 +28,11 @@ public abstract class ScrollAnimation
 
     public abstract void ScrollBy(Vector delta, double duration);
 
+    public bool CheckAccess() => InternalScrollClient is not null;
+
     public void Start()
     {
-        if (InternalScrollClient is null)
-            throw new InvalidOperationException("ScrollClient is not set.");
-
+        CheckAccess();
         IsActive = true;
         StartTimestamp = Stopwatch.GetTimestamp();
         ScrollClient.Start(this);
@@ -39,6 +44,7 @@ public abstract class ScrollAnimation
         if (IsActive is not true)
             return;
 
+        CheckAccess();
         IsActive = false;
         ScrollClient.Stop(this);
         OnStop();
@@ -48,6 +54,7 @@ public abstract class ScrollAnimation
 
     protected virtual void OnStop() { }
 
+    // Returns false when the animation has finished; the caller is responsible for Stop().
     public abstract bool ServiceAnimation(TimeSpan elapsedTime);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -74,6 +81,8 @@ public abstract class ScrollAnimation
             scrollViewer.SetValue(ControllerProperty, controller);
         }
 
+        // On disable only the animations are cleared and deactivated; the controller itself is kept
+        // so that re-enabling reuses the same instance.
         if (e.NewValue is true)
         {
             controller.ZoomAnimation ??= new ZoomAnimationSmooth();
@@ -98,6 +107,7 @@ public abstract class ScrollAnimation
         scrollViewer.SetValue(IsEnabledProperty, value);
     }
 
+    // A wheel delta that is not a whole line is from a touchpad (continuous fractional deltas).
     protected static bool IsTouchPadScroll(Vector value) =>
        value.X % Mouse.MouseWheelDeltaForOneLine != 0 ||
        value.Y % Mouse.MouseWheelDeltaForOneLine != 0;

@@ -1,12 +1,63 @@
-﻿using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.CompilerServices;
 using System.Windows;
+
+#if !NET8_0_OR_GREATER
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+#endif
 
 namespace Zen.Scroll;
 
 internal static class ExtensionMethods
 {
+    extension(FrameworkElement element)
+    {
+        public T? GetElement<T>(string name) where T : DependencyObject => (T?)GetTemplateChild(element, name);
+
+#if NET8_0_OR_GREATER
+        [UnsafeAccessor(UnsafeAccessorKind.Method)]
+        private static extern DependencyObject? GetTemplateChild(FrameworkElement e, string name);
+#else
+        private static DependencyObject? GetTemplateChild(FrameworkElement e, string name)
+        {
+            var internalFlag = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            return (DependencyObject?)typeof(FrameworkElement).GetMethod("GetTemplateChild", internalFlag).Invoke(e, [name]);
+        }
+#endif
+    }
+
+    extension(Vector vector)
+    {
+        public Vector ConstrainedBetween(Vector min, Vector max)
+        {
+            return new(
+                Math.Max(min.X, Math.Min(max.X, vector.X)),
+                Math.Max(min.Y, Math.Min(max.Y, vector.Y)));
+        }
+
+        // Keeps NaN / Infinity out of dependency properties.
+        public Vector ValidOr(Vector fallback)
+        {
+            static bool IsValidValue(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+            return new(IsValidValue(vector.X) ? vector.X : fallback.X, IsValidValue(vector.Y) ? vector.Y : fallback.Y);
+        }
+
+        public Vector WithX(double x)
+        {
+            return new(x, vector.Y);
+        }
+
+        public Vector WithY(double y)
+        {
+            return new(vector.X, y);
+        }
+    }
+
+    extension(Point self)
+    {
+        public Vector ToVector() => new(self.X, self.Y);
+    }
+
 #if !NET8_0_OR_GREATER
     extension(Environment)
     {
@@ -19,19 +70,11 @@ internal static class ExtensionMethods
 
     extension(Stopwatch)
     {
-        //private const long TicksPerMillisecond = 10000;
-        //private const long TicksPerSecond = TicksPerMillisecond * 1000;
-
-        //// performance-counter frequency, in counts per ticks.
-        //// This can speed up conversion from high frequency performance-counter
-        //// to ticks.
-        //private static readonly double s_tickFrequency = (double)TicksPerSecond / Frequency;
-
         public static TimeSpan GetElapsedTime(long startingTimestamp) =>
             GetElapsedTime(startingTimestamp, Stopwatch.GetTimestamp());
 
         public static TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp) =>
-            new((endingTimestamp - startingTimestamp) * (10000 * 1000) / Stopwatch.Frequency /*s_tickFrequency*/);
+            new((endingTimestamp - startingTimestamp) * (10000 * 1000) / Stopwatch.Frequency);
     }
 
     extension(Math)
@@ -57,88 +100,4 @@ internal static class ExtensionMethods
         }
     }
 #endif
-
-    extension(FrameworkElement element)
-    {
-        public DependencyObject GetElement(string name) => GetTemplateChild(element, name);
-
-        public T GetElement<T>(string name) where T : DependencyObject => (T)GetTemplateChild(element, name);
-
-#if NET8_0_OR_GREATER
-        [UnsafeAccessor(UnsafeAccessorKind.Method)]
-        private static extern DependencyObject GetTemplateChild(FrameworkElement e, string name);
-#else
-        private static DependencyObject GetTemplateChild(FrameworkElement e, string name)
-        {
-            var internalFlag = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
-            return (DependencyObject)typeof(FrameworkElement).GetMethod("GetTemplateChild", internalFlag).Invoke(e, [name]);
-        }
-#endif
-
-    }
-
-    extension(Vector vector)
-    {
-        public Vector ConstrainedBetween(Vector min, Vector max)
-        {
-            return new(
-                Math.Max(min.X, Math.Min(max.X, vector.X)),
-                Math.Max(min.Y, Math.Min(max.Y, vector.Y)));
-        }
-
-        public Vector ValidOr(Vector fallback)
-        {
-            static bool IsValidValue(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
-            return new(IsValidValue(vector.X) ? vector.X : fallback.X, IsValidValue(vector.Y) ? vector.Y : fallback.Y);
-        }
-
-        public Vector ScaledBy(Vector factor)
-        {
-            return new(vector.X * factor.X, vector.Y * factor.Y);
-        }
-
-        public Vector WithX(double x)
-        {
-            return new(x, vector.Y);
-        }
-
-        public Vector WithX(Vector vector1)
-        {
-            return new(vector1.X, vector.Y);
-        }
-
-        public Vector WithY(double y)
-        {
-            return new(vector.X, y);
-        }
-
-        public Vector WithY(Vector vector1)
-        {
-            return new(vector.X, vector1.Y);
-        }
-
-        public static Vector operator /(Vector vector1, Vector vector2)
-        {
-            return new(vector1.X / vector2.X, vector1.Y / vector2.Y);
-        }
-
-        public static Vector operator *(Vector vector1, Vector vector2)
-        {
-            return new(vector1.X * vector2.X, vector1.Y * vector2.Y);
-        }
-
-        public static bool operator <(Vector vector1, Vector vector2)
-        {
-            return vector1.X < vector2.X && vector1.Y < vector2.Y;
-        }
-        public static bool operator >(Vector vector1, Vector vector2)
-        {
-            return vector1.X > vector2.X && vector1.Y > vector2.Y;
-        }
-    }
-
-    extension(Point self)
-    {
-        public Vector ToVector() => new(self.X, self.Y);
-    }
 }

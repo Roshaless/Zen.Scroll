@@ -3,136 +3,360 @@ using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace Zen.Scroll;
 
+// Scroll/zoom state of a single ScrollViewer and the visual composition of it:
+// animations only submit per-frame targets; everything is folded into a content transform
+// and scrollbar values here.
 internal sealed class ScrollAnimationTracker
 {
-    private static readonly Vector MinContentScale = new(0.01, 0.01);
-    private static readonly Vector MaxContentScale = new(100, 100);
-    private static readonly Vector UnitVector = new(1, 1);
-
-    public static Binding DefaultHorizontalOffsetBinding = new()
-    {
-        Mode = BindingMode.OneWay,
-        RelativeSource = RelativeSource.TemplatedParent,
-        Path = new PropertyPath(ScrollViewer.HorizontalOffsetProperty)
-    };
-
-    public static Binding DefaultVerticalOffsetBinding = new()
-    {
-        Mode = BindingMode.OneWay,
-        RelativeSource = RelativeSource.TemplatedParent,
-        Path = new PropertyPath(ScrollViewer.VerticalOffsetProperty)
-    };
-
     private readonly ScrollViewer RootScrollViewer;
-    private readonly TranslateTransform ContentTransform;
-    private readonly ScaleTransform ContentScaleTransform;
-    private readonly TransformGroup ContentTransformGroup;
+    private readonly ScrollAnimationClient Client;
+    private readonly ScrollBarTakeover ScrollBarTakeover;
+    private readonly MatrixTransform ContentTransform;
     private readonly DependencyPropertyDescriptor ContentPropertyDescriptor;
+    private readonly DependencyPropertyDescriptor TemplatePropertyDescriptor;
 
-    public bool IsZoomDisabled { get; private set; }
-
-    public ScrollBar? VerticalScrollBar { get; private set; }
-
-    public ScrollBar? HorizontalScrollBar { get; private set; }
-
-    public ScrollContentPresenter? ScrollContentPresenter { get; private set; }
-
-    public FrameworkElement? ScrollContentObject { get; private set; }
-
-    public Vector ContentScaleCenter { get; set; }
-
-    public Vector ScrollOffset { get; private set; }
-
-    public Vector ScrollableOffset { get; private set; }
-
-    public Vector UnscaledScrollableOffset { get; private set; }
-
-    public Vector ViewportSize => new(ScrollContentPresenter?.ViewportWidth ?? 0, ScrollContentPresenter?.ViewportHeight ?? 0);
-
-    public Vector ContentScale { get; private set; } = new(1, 1);
-
-    public Vector ContentOffset { get; private set; } = new(0, 0);
-
-    public Vector AnimatedOffset => ScrollOffset - ContentOffset.ScaledBy(ContentScale);
-
-    public bool CanHorizontalScroll => ContentScale.X > 1 || RootScrollViewer.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled;
-
-    public bool CanVerticallyScroll => ContentScale.Y > 1 || RootScrollViewer.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled;
-
-    public bool CanZoom => !IsZoomDisabled && (CanHorizontalScroll || CanVerticallyScroll);
+    private ScrollContentPresenter? ScrollContentPresenter { get; set; }
+    private FrameworkElement? ScrollContentObject { get; set; }
 
     public bool IsInitialized
     {
-        [MemberNotNullWhen(true, nameof(VerticalScrollBar), nameof(HorizontalScrollBar), nameof(ScrollContentObject), nameof(ScrollContentPresenter))]
-        get => VerticalScrollBar is not null && HorizontalScrollBar is not null && ScrollContentObject is not null && ScrollContentPresenter is not null;
+        [MemberNotNullWhen(true, nameof(ScrollContentObject), nameof(ScrollContentPresenter))]
+        get => ScrollContentObject is not null && ScrollContentPresenter is not null;
     }
 
-    public ScrollAnimationTracker(ScrollViewer scrollViewer)
+    // Gates the descendant cache refresh so a pure scroll stop doesn't walk the tree.
+    private bool HasScaleChanged { get; set; }
+    private bool ScrollableDirty { get; set; }
+    private bool HasPendingContentScale { get; set; }
+    private bool HasPendingScrollOffset { get; set; }
+    private Vector PendingContentScale { get; set; } = UnitScale;
+    private Vector PendingScrollOffset { get; set; }
+
+    public Vector ContentOffset { get; private set; }
+    public Vector ContentExtent { get; private set; }
+    public Vector ContentViewport { get; private set; }
+    public Vector ContentScale { get; private set; } = UnitScale;
+    public Vector ContentScaleCenter { get; internal set; }
+    public Vector ScrollOffset { get; private set; }
+    public Vector ScrollableOffset { get; private set; }
+    public Vector UnscaledScrollableOffset { get; private set; }
+
+    // Visual offset = scrollbar value − contentOffset·scale; always matches what is on screen.
+    public Vector AnimatedOffset => new(
+        ScrollOffset.X - ContentOffset.X * ContentScale.X,
+        ScrollOffset.Y - ContentOffset.Y * ContentScale.Y);
+
+    public Vector ViewportSize => new
+        (ScrollContentPresenter?.ViewportWidth ?? 0,
+        ScrollContentPresenter?.ViewportHeight ?? 0);
+
+    // An axis is scrollable when the scrollbar allows it, or when zooming has produced overflow anyway.
+    public bool CanHorizontalScroll =>
+        (RootScrollViewer.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled
+         && RootScrollViewer.ScrollableWidth > 0) || IsScaledX(ContentScale);
+
+    public bool CanVerticallyScroll =>
+        (RootScrollViewer.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled
+         && RootScrollViewer.ScrollableHeight > 0) || IsScaledY(ContentScale);
+
+    // Structural capability, unrelated to whether the content overflows:
+    // zooming into a smaller-than-viewport content is what creates the scrollable area in the first place.
+    public bool CanZoom => !IsZoomDisabled
+        && (RootScrollViewer.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled
+            || RootScrollViewer.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled);
+
+    public bool IsRootScrollViewer { get; private set; }
+
+    public bool IsZoomDisabled { get; private set; }
+
+    public ScrollAnimationTracker(ScrollViewer scrollViewer, ScrollAnimationClient client)
     {
         RootScrollViewer = scrollViewer;
+        Client = client;
         ContentPropertyDescriptor = DependencyPropertyDescriptor.FromProperty(
             ContentPresenter.ContentProperty, typeof(ScrollContentPresenter));
+        TemplatePropertyDescriptor = DependencyPropertyDescriptor.FromProperty(
+            Control.TemplateProperty, typeof(ScrollViewer));
 
-        ContentTransform = new TranslateTransform();
-        ContentScaleTransform = new ScaleTransform(1, 1);
-        ContentTransformGroup = new TransformGroup()
-        {
-            Children = { ContentTransform, ContentScaleTransform }
-        };
+        ContentTransform = new MatrixTransform();
+        ScrollBarTakeover = new ScrollBarTakeover(scrollViewer, this);
     }
 
     public void Initialize()
     {
-        RootScrollViewer.Loaded += OnLoaded;
-        RootScrollViewer.SizeChanged += OnLoaded;
+        RootScrollViewer.Loaded += OnResolveRequested;
+        RootScrollViewer.SizeChanged += OnResolveRequested;
         RootScrollViewer.Unloaded += OnUnloaded;
 
-        OnLoaded(null, EventArgs.Empty);
+        OnResolveRequested(null, EventArgs.Empty);
     }
 
     public void Uninitialize()
     {
-        RootScrollViewer.Loaded -= OnLoaded;
-        RootScrollViewer.SizeChanged -= OnLoaded;
+        RootScrollViewer.Loaded -= OnResolveRequested;
+        RootScrollViewer.SizeChanged -= OnResolveRequested;
+        RootScrollViewer.SizeChanged -= OnSizeChanged;
         RootScrollViewer.Unloaded -= OnUnloaded;
 
         OnUnloaded(null, EventArgs.Empty);
     }
 
-    public void AnimateScrollBy(Vector delta)
+    // Retry entry before the parts are ready; both Loaded and SizeChanged are hooked up to it.
+    private void OnResolveRequested(object? sender, EventArgs e)
     {
-        AnimateScrollTo(AnimatedOffset + delta);
+        if (RootScrollViewer is not { ActualHeight: > 0, ActualWidth: > 0 }) return;
+        if (ResolveParts() is not true) return;
+
+        // Unsubscribe before subscribing to avoid double subscription.
+        RootScrollViewer.SizeChanged -= OnResolveRequested;
+        RootScrollViewer.SizeChanged -= OnSizeChanged;
+        RootScrollViewer.SizeChanged += OnSizeChanged;
+        RootScrollViewer.ScrollChanged -= OnScrollChanged;
+        RootScrollViewer.ScrollChanged += OnScrollChanged;
+        TemplatePropertyDescriptor.RemoveValueChanged(RootScrollViewer, OnTemplateChanged);
+        TemplatePropertyDescriptor.AddValueChanged(RootScrollViewer, OnTemplateChanged);
+
+        OnScrollContentChanged(null, e);
+    }
+
+    private void OnUnloaded(object? sender, EventArgs e)
+    {
+        DetachPresenter();
+
+        RootScrollViewer.SizeChanged -= OnResolveRequested;
+        RootScrollViewer.SizeChanged -= OnSizeChanged;
+        RootScrollViewer.ScrollChanged -= OnScrollChanged;
+        TemplatePropertyDescriptor.RemoveValueChanged(RootScrollViewer, OnTemplateChanged);
+        ScrollContentObject?.SizeChanged -= OnSizeChanged;
+
+        ScrollBarTakeover.Reset();
+
+        UninitializeTransforms();
+
+        // The written-out accumulated scale must be cleared too,
+        // or re-attached content is rasterized with the old zoom.
+        ContentCache.ClearScale(RootScrollViewer);
+
+        ContentOffset = default;
+        ContentScale = UnitScale;
+        ContentScaleCenter = default;
+        ContentTransform.Matrix = Matrix.Identity;
+
+        PendingContentScale = UnitScale;
+        HasPendingContentScale = false;
+        HasScaleChanged = false;
+        PendingScrollOffset = default;
+        HasPendingScrollOffset = false;
+        ScrollableDirty = false;
+
+        ScrollableOffset = default;
+        ScrollOffset = default;
+        ContentExtent = default;
+        ContentViewport = default;
+        UnscaledScrollableOffset = default;
+
+        IsRootScrollViewer = false;
+        IsZoomDisabled = false;
+
+        ScrollContentObject = null;
+    }
+
+    // The old presenter's subscriptions must be removed before replacing it,
+    // otherwise it stays referenced and keeps firing on content changes.
+    private bool ResolveParts()
+    {
+        var presenter = RootScrollViewer.GetElement<ScrollContentPresenter>("PART_ScrollContentPresenter");
+        var verticalScrollBar = RootScrollViewer.GetElement<ScrollBar>("PART_VerticalScrollBar");
+        var horizontalScrollBar = RootScrollViewer.GetElement<ScrollBar>("PART_HorizontalScrollBar");
+        if (horizontalScrollBar is null || verticalScrollBar is null || presenter is null) return false;
+
+        if (ReferenceEquals(presenter, ScrollContentPresenter) is not true)
+        {
+            DetachPresenter();
+            ScrollContentPresenter = presenter;
+            presenter.Loaded += OnScrollContentChanged;
+            presenter.Unloaded += OnScrollContentChanged;
+            ContentPropertyDescriptor.AddValueChanged(presenter, OnScrollContentChanged);
+        }
+
+        ScrollBarTakeover.SetParts(horizontalScrollBar, verticalScrollBar);
+
+        // Do not enable the zoom feature on DataGrid and GridView.
+        IsZoomDisabled = RootScrollViewer.TemplatedParent is DataGrid or ListView;
+
+        IsRootScrollViewer = true;
+        for (DependencyObject? parent = VisualTreeHelper.GetParent(RootScrollViewer);
+             parent is not null;
+             parent = VisualTreeHelper.GetParent(parent))
+        {
+            if (parent is ScrollViewer)
+            {
+                IsRootScrollViewer = false;
+                break;
+            }
+        }
+
+        return true;
+    }
+
+    private void DetachPresenter()
+    {
+        if (ScrollContentPresenter is not { } presenter) return;
+
+        presenter.Loaded -= OnScrollContentChanged;
+        presenter.Unloaded -= OnScrollContentChanged;
+        ContentPropertyDescriptor.RemoveValueChanged(presenter, OnScrollContentChanged);
+        ScrollContentPresenter = null;
+    }
+
+    // A template swap rebuilds every part; the old ones are already detached from the tree,
+    // so re-resolve only after the new template has finished applying.
+    private void OnTemplateChanged(object? sender, EventArgs e)
+    {
+        RootScrollViewer.Dispatcher.BeginInvoke(new Action(Reattach), DispatcherPriority.Loaded);
+
+        void Reattach()
+        {
+            if (RootScrollViewer.IsLoaded is not true) return;
+            if (ResolveParts() is not true) return;
+
+            OnScrollContentChanged(null, EventArgs.Empty);
+        }
     }
 
     public void AnimateScrollTo(Vector offset)
     {
         if (IsInitialized is not true) return;
 
-        var targetOffset = offset.ValidOr(ScrollOffset)
+        PendingScrollOffset = offset.ValidOr(ScrollOffset)
             .ConstrainedBetween(default, ScrollableOffset);
+        HasPendingScrollOffset = true;
 
-        ApplyOffsetChanged(targetOffset - ScrollOffset);
+        if (Client.IsActive is not true)
+            FlushFrame();
     }
 
+    // Several deltas can arrive within one frame (input rate above frame rate):
+    // accumulate onto the frame's pending target, or a later delta would overwrite an earlier one.
+    public void ApplyScrollDelta(Vector delta) =>
+        AnimateScrollTo((HasPendingScrollOffset ? PendingScrollOffset : AnimatedOffset) + delta);
+
+    // Writes the accumulated zoom to the inherited DP once per zoom stop; every cached content
+    // in the tree (including nested ScrollViewers) re-rasterizes through property inheritance.
+    public void CommitContentCacheScale()
+    {
+        if (HasScaleChanged is not true) return;
+
+        HasScaleChanged = false;
+        ContentCache.SetScale(RootScrollViewer, Math.Max(ContentScale.X, ContentScale.Y));
+    }
+
+    public void SetContentScale(Vector scale)
+    {
+        if (IsInitialized is not true) return;
+
+        scale = scale.ValidOr(ContentScale)
+            .ConstrainedBetween(MinimumScale, MaximumScale);
+
+        // Only record the pending scale: folding the anchor offset into PendingScrollOffset here
+        // would clobber the frame's scroll target.
+        if (scale == ContentScale) return;
+
+        PendingContentScale = scale;
+        HasPendingContentScale = true;
+        HasScaleChanged = true;
+        ScrollableDirty = true;
+
+        if (Client.IsActive is not true)
+            FlushFrame();
+    }
+
+    public void FlushFrame()
+    {
+        if (IsInitialized is not true) return;
+
+        if (HasPendingContentScale)
+        {
+            var scale = ContentScale;
+            var newScale = PendingContentScale;
+
+            // Zoom anchored on the cursor: screen = scale·(p + contentOffset) − scrollOffset, so the content
+            // point under the cursor is p* = (center + scrollOffset)/scale − contentOffset; scaling the
+            // reciprocal-difference at that point keeps p* fixed before and after the zoom.
+            var contentOffset = new Vector(
+                ContentOffset.X + (ContentScaleCenter.X + ScrollOffset.X) * (1d / newScale.X - 1d / scale.X),
+                ContentOffset.Y + (ContentScaleCenter.Y + ScrollOffset.Y) * (1d / newScale.Y - 1d / scale.Y));
+
+            if (HasPendingScrollOffset)
+            {
+                // Fold this frame's scroll into the same content-offset delta:
+                // ΔcontentOffset = (current visual − target visual) / newScale; an axis without distance stays 0.
+                contentOffset += new Vector(
+                    (AnimatedOffset.X - PendingScrollOffset.X) / newScale.X,
+                    (AnimatedOffset.Y - PendingScrollOffset.Y) / newScale.Y);
+            }
+
+            // Recompute the frame's visible target from the current ScrollOffset so the ContentOffset that
+            // ApplyOffsetChanged rebuilds matches this frame's target (not the previous frame's).
+            PendingScrollOffset = new Vector(
+                ScrollOffset.X - contentOffset.X * newScale.X,
+                ScrollOffset.Y - contentOffset.Y * newScale.Y);
+            HasPendingScrollOffset = true;
+
+            ContentScale = newScale;
+            ScrollableDirty = true;
+            HasPendingContentScale = false;
+        }
+
+        if (ScrollableDirty)
+        {
+            UpdateScrollableRange();
+            if (ScrollOffset.X > ScrollableOffset.X || ScrollOffset.Y > ScrollableOffset.Y)
+            {
+                LogicalScroll(new Vector(
+                    Math.Min(ScrollOffset.X, ScrollableOffset.X),
+                    Math.Min(ScrollOffset.Y, ScrollableOffset.Y)));
+            }
+
+            ScrollableDirty = false;
+        }
+
+        if (HasPendingScrollOffset)
+        {
+            var targetOffset = PendingScrollOffset.ValidOr(ScrollOffset)
+                .ConstrainedBetween(default, ScrollableOffset);
+
+            ApplyOffsetChanged(targetOffset - ScrollOffset);
+        }
+
+        HasPendingScrollOffset = false;
+    }
+
+    // One MatrixTransform carries both scale and translation, keeping DP writes per frame to a minimum.
     private void ApplyOffsetChanged(Vector offsetChanged)
     {
-        offsetChanged = offsetChanged.ConstrainedBetween(-ScrollOffset, ScrollableOffset - ScrollOffset);
+        offsetChanged = offsetChanged.ConstrainedBetween(
+            -ScrollOffset, ScrollableOffset - ScrollOffset);
 
-        SetContentTransform(offsetChanged);
-        SetScrollBarValue(ScrollOffset.X + offsetChanged.X, ScrollOffset.Y + offsetChanged.Y);
+        var scale = ContentScale;
+        ContentOffset = new Vector(
+            -offsetChanged.X / Math.Max(scale.X, MinDivisor.X),
+            -offsetChanged.Y / Math.Max(scale.Y, MinDivisor.Y));
+        ContentTransform.Matrix = new Matrix(
+            scale.X, 0, 0, scale.Y,
+            ContentOffset.X * scale.X, ContentOffset.Y * scale.Y);
+
+        ScrollBarTakeover.SetValue(ScrollOffset.X + offsetChanged.X, ScrollOffset.Y + offsetChanged.Y);
     }
 
-    public void ApplyAnimatedOffset()
-    {
-        LogicalScroll(AnimatedOffset);
-    }
+    public void ApplyAnimatedOffset() => LogicalScroll(AnimatedOffset);
 
-    public void LogicalScroll(Vector offset)
+    private void LogicalScroll(Vector offset)
     {
         if (IsInitialized is not true) return;
 
@@ -153,179 +377,54 @@ internal sealed class ScrollAnimationTracker
         ApplyOffsetChanged(animatedOffset - ScrollOffset);
     }
 
-    private void SetScrollBarValue(double x, double y)
-    {
-        HorizontalScrollBar?.SetValue(RangeBase.ValueProperty, x);
-        VerticalScrollBar?.SetValue(RangeBase.ValueProperty, y);
-    }
-
-    public void SetContentScale(Vector scale)
-    {
-        if (IsInitialized is not true) return;
-
-        scale = scale.ValidOr(ContentScale)
-            .ConstrainedBetween(MinContentScale, MaxContentScale);
-
-        var oldScale = ContentScale;
-        if (oldScale == scale) return;
-
-        var scaleRatio = new Vector(scale.X / oldScale.X, scale.Y / oldScale.Y);
-
-        // 以当前可视偏移为基准、围绕光标 ContentScaleCenter 缩放，使光标下的内容点保持不动。
-        // targetOffset = AnimatedOffset + (AnimatedOffset + Center) * (scaleRatio - 1)
-        //              = AnimatedOffset * scaleRatio + Center * (scaleRatio - 1)
-        var animatedOffset = AnimatedOffset;
-        var ratio = scaleRatio - UnitVector;
-        var targetOffset = new Vector(
-            animatedOffset.X * scaleRatio.X + ContentScaleCenter.X * ratio.X,
-            animatedOffset.Y * scaleRatio.Y + ContentScaleCenter.Y * ratio.Y);
-
-        ContentScaleTransform.ScaleX = scale.X;
-        ContentScaleTransform.ScaleY = scale.Y;
-        ContentScale = scale;
-
-        SyncScrollableOffset();
-
-        if (ScrollOffset.X > ScrollableOffset.X || ScrollOffset.Y > ScrollableOffset.Y)
-        {
-            LogicalScroll(new Vector(
-                Math.Min(ScrollOffset.X, ScrollableOffset.X),
-                Math.Min(ScrollOffset.Y, ScrollableOffset.Y)));
-        }
-
-        AnimateScrollTo(targetOffset);
-    }
-
-    private void SetContentTransform(Vector offsetChanged)
-    {
-        ContentTransform.X = -offsetChanged.X / Math.Max(ContentScaleTransform.ScaleX, MinContentScale.X);
-        ContentTransform.Y = -offsetChanged.Y / Math.Max(ContentScaleTransform.ScaleY, MinContentScale.Y);
-        ContentOffset = new Vector(ContentTransform.X, ContentTransform.Y);
-    }
-
     public void SyncScrollableOffset()
     {
         if (IsInitialized is not true) return;
 
         SyncScrollOffset();
-
-        var scale = ContentScale;
-        var viewport = ViewportSize;
-
-        ScrollableOffset = new Vector(
-            Math.Max(0, ScrollContentPresenter.ExtentWidth * scale.X - viewport.X),
-            Math.Max(0, ScrollContentPresenter.ExtentHeight * scale.Y - viewport.Y));
-
+        ContentExtent = new Vector(ScrollContentPresenter.ExtentWidth, ScrollContentPresenter.ExtentHeight);
+        ContentViewport = new Vector(ScrollContentPresenter.ViewportWidth, ScrollContentPresenter.ViewportHeight);
         UnscaledScrollableOffset = new Vector(RootScrollViewer.ScrollableWidth, RootScrollViewer.ScrollableHeight);
 
-        if (HorizontalScrollBar.Maximum != ScrollableOffset.X)
-        {
-            HorizontalScrollBar.Maximum = ScrollableOffset.X;
-        }
-        if (VerticalScrollBar.Maximum != ScrollableOffset.Y)
-        {
-            VerticalScrollBar.Maximum = ScrollableOffset.Y;
-        }
-
-        SyncScrollBarVisibility();
+        UpdateScrollableRange();
     }
 
     private void SyncScrollOffset()
     {
+        // While animations are running, ScrollOffset is maintained by LogicalScroll; reading back the
+        // ScrollViewer's async offset here would overwrite the just-committed value and accumulate drift
+        // (seen as the content shifting away after zooming in and back out).
+        if (Client.IsActive)
+            return;
+
         ScrollOffset = new Vector(RootScrollViewer.HorizontalOffset, RootScrollViewer.VerticalOffset);
     }
 
-    private void SyncScrollBarVisibility()
+    private void UpdateScrollableRange()
     {
-        static bool IsHidden(ScrollBarVisibility visibility) =>
-            visibility is ScrollBarVisibility.Disabled or ScrollBarVisibility.Hidden;
+        if (IsInitialized is not true) return;
 
-        var anyAxisVisible = !IsHidden(RootScrollViewer.HorizontalScrollBarVisibility) ||
-                             !IsHidden(RootScrollViewer.VerticalScrollBarVisibility);
+        var scale = ContentScale;
+        ScrollableOffset = new Vector(
+            Math.Max(0, ContentExtent.X * scale.X - ContentViewport.X),
+            Math.Max(0, ContentExtent.Y * scale.Y - ContentViewport.Y));
 
-        if (anyAxisVisible && ContentScale.X - 1d > 1e-3 && ContentScale.Y - 1d > 1e-3)
-        {
-            ScrollBarCommandHandler.Attach(RootScrollViewer, this);
-            HorizontalScrollBar?.SetCurrentValue(UIElement.VisibilityProperty, Visibility.Visible);
-            VerticalScrollBar?.SetCurrentValue(UIElement.VisibilityProperty, Visibility.Visible);
-        }
-        else
-        {
-            ScrollBarCommandHandler.Detach(RootScrollViewer);
-            HorizontalScrollBar?.InvalidateProperty(UIElement.VisibilityProperty);
-            VerticalScrollBar?.InvalidateProperty(UIElement.VisibilityProperty);
-        }
+        ScrollBarTakeover.SetMaximum(ScrollableOffset);
+        ScrollBarTakeover.Sync(IsScaledX(scale) && IsScaledY(scale));
     }
 
-    private void OnLoaded(object? sender, EventArgs e)
-    {
-        if (RootScrollViewer is not ScrollViewer { ActualHeight: > 0, ActualWidth: > 0 }) return;
-
-        VerticalScrollBar = RootScrollViewer.GetElement<ScrollBar>("PART_VerticalScrollBar");
-        HorizontalScrollBar = RootScrollViewer.GetElement<ScrollBar>("PART_HorizontalScrollBar");
-        ScrollContentPresenter = RootScrollViewer.GetElement<ScrollContentPresenter>("PART_ScrollContentPresenter");
-        if (ScrollContentPresenter is null || HorizontalScrollBar is null || VerticalScrollBar is null) return;
-
-        // Do not enable the zoom feature on DataGrid and GridView.
-        IsZoomDisabled = RootScrollViewer.TemplatedParent is DataGrid or ListView;
-
-        // Use the SizeChanged event instead of the Loaded event to avoid triggering when the
-        // ScrollViewer has loaded but the ScrollContentPresenter has not yet been measured.
-
-        RootScrollViewer.SizeChanged -= OnLoaded;
-        RootScrollViewer.SizeChanged += ScrollViewer_OnSizeChanged;
-        RootScrollViewer.ScrollChanged += ScrollViewer_OnScrollChanged;
-        ScrollContentPresenter.Loaded += ScrollContentPresenter_OnLoaded;
-        ScrollContentPresenter.Unloaded += ScrollContentPresenter_OnUnloaded;
-        ScrollContentObject = ScrollContentPresenter.Content as FrameworkElement;
-        ContentPropertyDescriptor.AddValueChanged(ScrollContentPresenter, OnScrollContentChanged);
-
-        OnScrollContentChanged(null, e);
-    }
-
-    private void OnUnloaded(object? sender, EventArgs e)
-    {
-        if (ScrollContentPresenter is not null)
-        {
-            ScrollContentPresenter.Loaded -= ScrollContentPresenter_OnLoaded;
-            ScrollContentPresenter.Unloaded -= ScrollContentPresenter_OnUnloaded;
-            ContentPropertyDescriptor.RemoveValueChanged(ScrollContentPresenter, OnScrollContentChanged);
-        }
-
-        // Reset the properties to their default bindings to ensure that
-        // the scrolling behavior is normal when animations are not enabled.
-        VerticalScrollBar?.SetBinding(RangeBase.ValueProperty, DefaultVerticalOffsetBinding);
-        HorizontalScrollBar?.SetBinding(RangeBase.ValueProperty, DefaultHorizontalOffsetBinding);
-
-        RootScrollViewer.SizeChanged -= ScrollViewer_OnSizeChanged;
-        RootScrollViewer.ScrollChanged -= ScrollViewer_OnScrollChanged;
-        ScrollContentObject?.SizeChanged -= ScrollViewer_OnSizeChanged;
-
-        ScrollBarCommandHandler.Detach(RootScrollViewer);
-
-        SyncScrollBarVisibility();
-        UninitializeTransforms();
-        ResetTransforms();
-
-        VerticalScrollBar = null;
-        HorizontalScrollBar = null;
-        ScrollContentPresenter = null;
-        ScrollContentObject = null;
-    }
-
-    private void ScrollViewer_OnScrollChanged(object? sender, ScrollChangedEventArgs e)
+    private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (e.Handled)
             return;
 
+        // ScrollChanged bubbles up from nested ScrollViewers; marking it handled would swallow the app's own
+        // scroll notifications too, so distinguish by OriginalSource instead.
         if (e.OriginalSource != RootScrollViewer)
             return;
 
-        e.Handled = true;
-
-        // 仅在范围相关属性（extent / viewport）变化时重算滚动范围，
-        // 否则只同步实时偏移，避免做无谓的乘算与依赖属性读写。
-        if (e.ExtentWidthChange != 0 || e.ExtentHeightChange != 0 || e.ViewportWidthChange != 0 || e.ViewportHeightChange != 0)
+        if (e.ExtentWidthChange != 0 || e.ViewportWidthChange != 0 ||
+            e.ExtentHeightChange != 0 || e.ViewportHeightChange != 0)
         {
             SyncScrollableOffset();
         }
@@ -335,19 +434,10 @@ internal sealed class ScrollAnimationTracker
         }
     }
 
-    private void ScrollViewer_OnSizeChanged(object? sender, EventArgs e)
+    private void OnSizeChanged(object? sender, EventArgs e)
     {
         SyncScrollableOffset();
-    }
-
-    private void ScrollContentPresenter_OnLoaded(object? sender, EventArgs e)
-    {
-        OnScrollContentChanged(sender, e);
-    }
-
-    private void ScrollContentPresenter_OnUnloaded(object? sender, EventArgs e)
-    {
-        OnScrollContentChanged(sender, e);
+        ContentCache.Update(ScrollContentObject);
     }
 
     private void OnScrollContentChanged(object? sender, EventArgs e)
@@ -358,39 +448,24 @@ internal sealed class ScrollAnimationTracker
         var newContent = ScrollContentPresenter?.Content as FrameworkElement;
         if (newContent != oldContent && oldContent is not null)
         {
-            oldContent.SizeChanged -= ScrollViewer_OnSizeChanged;
-        }
-
-        if (newContent is not null)
-        {
-            newContent.SizeChanged -= ScrollViewer_OnSizeChanged;
-            newContent.SizeChanged += ScrollViewer_OnSizeChanged;
+            oldContent.SizeChanged -= OnSizeChanged;
         }
 
         ScrollContentObject = newContent;
 
+        if (newContent is not null)
+        {
+            newContent.SizeChanged -= OnSizeChanged;
+            newContent.SizeChanged += OnSizeChanged;
+        }
+
         SyncScrollableOffset();
-        InitializeTransforms();
-    }
 
-    private void ResetTransforms()
-    {
-        ContentTransform.X = 0;
-        ContentTransform.Y = 0;
-        ContentOffset = default;
-        ContentScale = UnitVector;
-        ContentScaleTransform.ScaleX = 1;
-        ContentScaleTransform.ScaleY = 1;
-        ScrollableOffset = default;
-        ScrollOffset = default;
-    }
-
-    private void InitializeTransforms()
-    {
         if (ScrollContentObject is not null)
         {
             ScrollContentObject.RenderTransformOrigin = new Point(0, 0);
-            ScrollContentObject.RenderTransform = ContentTransformGroup;
+            ScrollContentObject.RenderTransform = ContentTransform;
+            ContentCache.Update(ScrollContentObject);
         }
     }
 
@@ -400,6 +475,16 @@ internal sealed class ScrollAnimationTracker
         {
             ScrollContentObject.RenderTransformOrigin = default;
             ScrollContentObject.RenderTransform = null;
+            ContentCache.Clear(ScrollContentObject);
         }
     }
+
+    // Treating (1 + epsilon) as "not zoomed" avoids churn from floating-point noise.
+    private const double ScaleEpsilon = 1e-3;
+    private static readonly Vector MinimumScale = new(1, 1);
+    private static readonly Vector MaximumScale = new(10, 10);
+    private static readonly Vector UnitScale = MinimumScale;
+    private static readonly Vector MinDivisor = new(0.01, 0.01);
+    private static bool IsScaledX(Vector scale) => scale.X - 1d > ScaleEpsilon;
+    private static bool IsScaledY(Vector scale) => scale.Y - 1d > ScaleEpsilon;
 }

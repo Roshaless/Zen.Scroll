@@ -6,21 +6,20 @@ using System.Windows.Media;
 
 namespace Zen.Scroll;
 
+// Once the scrollbar is taken over, Thumb drags and paging commands must run inside the
+// content-transform system instead of the ScrollViewer's native offset commits.
 internal static class ScrollBarCommandHandler
 {
+    private const double ScrollLineDelta = 16d;
+
     private static readonly DependencyProperty TrackerProperty =
         DependencyProperty.RegisterAttached("Tracker", typeof(ScrollAnimationTracker),
             typeof(ScrollBarCommandHandler), new PropertyMetadata(null));
 
-    private static ScrollAnimationTracker? GetTracker(ScrollViewer scrollViewer)
-    {
-        return scrollViewer.GetValue(TrackerProperty) as ScrollAnimationTracker;
-    }
-
     public static void Attach(ScrollViewer scrollViewer, ScrollAnimationTracker tracker)
     {
-        // 已挂载同一 tracker 时直接跳过，避免 SyncScrollableOffset 频繁调用时
-        // 反复 Detach/Attach，导致 CommandManager 处理程序被反复注销再注册。
+        // Skip when already attached to the same tracker: SyncScrollableOffset calls this often,
+        // and re-registering the CommandManager handlers every time would be churn.
         if (ReferenceEquals(GetTracker(scrollViewer), tracker))
             return;
 
@@ -43,10 +42,8 @@ internal static class ScrollBarCommandHandler
 
     private static void OnPreviewCanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
-        if (IsScrollCommand(e.Command) is not true) return;
-        if (e.Handled || sender is not ScrollViewer scrollViewer) return;
-        if (GetTracker(scrollViewer) is not ScrollAnimationTracker tracker) return;
-        if (IsFromNestedScrollViewer(e.OriginalSource, scrollViewer)) return;
+        if (e.Handled) return;
+        if (TryGetTracker(sender, e.Command, e.OriginalSource, out var tracker) is not true) return;
         if (TryResolveScrollTarget(tracker, e.Command, e.Parameter, out _, out _) is not true) return;
 
         e.CanExecute = true;
@@ -55,10 +52,8 @@ internal static class ScrollBarCommandHandler
 
     private static void OnPreviewExecuted(object sender, ExecutedRoutedEventArgs e)
     {
-        if (IsScrollCommand(e.Command) is not true) return;
-        if (e.Handled || sender is not ScrollViewer scrollViewer) return;
-        if (GetTracker(scrollViewer) is not ScrollAnimationTracker tracker) return;
-        if (IsFromNestedScrollViewer(e.OriginalSource, scrollViewer)) return;
+        if (e.Handled) return;
+        if (TryGetTracker(sender, e.Command, e.OriginalSource, out var tracker) is not true) return;
         if (TryResolveScrollTarget(tracker, e.Command, e.Parameter, out var isVertical, out var target) is not true) return;
 
         e.Handled = true;
@@ -72,6 +67,23 @@ internal static class ScrollBarCommandHandler
         }
     }
 
+    private static ScrollAnimationTracker? GetTracker(ScrollViewer scrollViewer) =>
+        scrollViewer.GetValue(TrackerProperty) as ScrollAnimationTracker;
+
+    private static bool TryGetTracker(object sender, ICommand command, object? originalSource, out ScrollAnimationTracker tracker)
+    {
+        tracker = null!;
+
+        if (IsScrollCommand(command) is not true) return false;
+        if (sender is not ScrollViewer scrollViewer) return false;
+        if (GetTracker(scrollViewer) is not ScrollAnimationTracker value) return false;
+        if (IsFromNestedScrollViewer(originalSource, scrollViewer)) return false;
+
+        tracker = value;
+        return true;
+    }
+
+    // Commands bubble up from nested ScrollViewers; only handle the ones that belong to this one.
     private static bool IsFromNestedScrollViewer(object? source, ScrollViewer root)
     {
         DependencyObject? current = source as DependencyObject;
@@ -91,8 +103,6 @@ internal static class ScrollBarCommandHandler
 
     private static bool TryResolveScrollTarget(ScrollAnimationTracker tracker, ICommand command, object? parameter, out bool isVertical, out double target)
     {
-        const double ScrollLineDelta = 16d;
-
         isVertical = true;
         target = 0;
 
@@ -100,6 +110,7 @@ internal static class ScrollBarCommandHandler
 
         var current = tracker.AnimatedOffset;
         var viewport = tracker.ViewportSize;
+
         if (command == ScrollBar.LineUpCommand)
         {
             target = current.Y - ScrollLineDelta;
@@ -174,10 +185,10 @@ internal static class ScrollBarCommandHandler
         command == ScrollBar.DeferScrollToHorizontalOffsetCommand ||
         command == ScrollBar.DeferScrollToVerticalOffsetCommand;
 
+    private static bool IsScrollCommand(ICommand command) =>
+        command is RoutedCommand { OwnerType: var ownerType } && ownerType == typeof(ScrollBar);
+
     private static bool IsScrollToOffsetCommand(ICommand command) =>
         command == ScrollBar.ScrollToHorizontalOffsetCommand ||
         command == ScrollBar.ScrollToVerticalOffsetCommand;
-
-    private static bool IsScrollCommand(ICommand command) =>
-        command is RoutedCommand { OwnerType: var ownerType } && ownerType == typeof(ScrollBar);
 }
