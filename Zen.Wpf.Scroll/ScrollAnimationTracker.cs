@@ -382,7 +382,14 @@ internal sealed class ScrollAnimationTracker
         if (IsInitialized is not true) return;
 
         SyncScrollOffset();
-        ContentExtent = new Vector(ScrollContentPresenter.ExtentWidth, ScrollContentPresenter.ExtentHeight);
+
+        // Mirror how the presenter arranges the content: max(extent, viewport), so a content smaller
+        // than the viewport counts at the viewport size it is stretched to. Taking the bare extent
+        // as the zoom base leaves (extent × scale − viewport) negative long after the zoomed content
+        // already overflows the viewport, so no scroll range appears although it is visibly cut off.
+        ContentExtent = new Vector(
+            Math.Max(ScrollContentPresenter.ExtentWidth, ScrollContentPresenter.ViewportWidth),
+            Math.Max(ScrollContentPresenter.ExtentHeight, ScrollContentPresenter.ViewportHeight));
         ContentViewport = new Vector(ScrollContentPresenter.ViewportWidth, ScrollContentPresenter.ViewportHeight);
         UnscaledScrollableOffset = new Vector(RootScrollViewer.ScrollableWidth, RootScrollViewer.ScrollableHeight);
 
