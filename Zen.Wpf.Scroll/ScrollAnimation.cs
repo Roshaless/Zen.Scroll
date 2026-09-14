@@ -116,7 +116,7 @@ public abstract class ScrollAnimation
 
     public static readonly DependencyProperty ScrollDurationProperty =
         DependencyProperty.RegisterAttached("ScrollDuration", typeof(double),
-            typeof(ScrollAnimation), TuningMetadata(80d, CoerceScrollDuration));
+            typeof(ScrollAnimation), TuningMetadata(70d, CoerceScrollDuration));
 
     public static readonly DependencyProperty MinimumScaleProperty =
         DependencyProperty.RegisterAttached("MinimumScale", typeof(Vector),
