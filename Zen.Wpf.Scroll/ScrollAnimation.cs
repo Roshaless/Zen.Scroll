@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -33,15 +34,18 @@ public abstract class ScrollAnimation
 
     public abstract void ScrollTo(Vector from, Vector to, double duration);
 
+    [MemberNotNullWhen(true, nameof(InternalScrollClient))]
     public bool CheckAccess() => InternalScrollClient is not null;
 
     public void Start()
     {
-        CheckAccess();
-        IsActive = true;
-        StartTimestamp = Stopwatch.GetTimestamp();
-        ScrollClient.Start(this);
-        OnStart();
+        if (CheckAccess())
+        {
+            IsActive = true;
+            StartTimestamp = Stopwatch.GetTimestamp();
+            ScrollClient.Start(this);
+            OnStart();
+        }
     }
 
     public void Stop()
@@ -49,10 +53,13 @@ public abstract class ScrollAnimation
         if (IsActive is not true)
             return;
 
-        CheckAccess();
-        IsActive = false;
-        ScrollClient.Stop(this);
-        OnStop();
+        if (CheckAccess())
+        {
+            CheckAccess();
+            IsActive = false;
+            ScrollClient.Stop(this);
+            OnStop();
+        }
     }
 
     protected virtual void OnStart() { }
