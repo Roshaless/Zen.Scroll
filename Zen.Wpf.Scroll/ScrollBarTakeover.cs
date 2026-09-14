@@ -103,6 +103,11 @@ internal sealed class ScrollBarTakeover(ScrollViewer scrollViewer, ScrollAnimati
 
         IsTakenOver = takeover;
 
+        // The bar belongs to the bindings while not taken over, so the remembered value is stale;
+        // dropping it keeps the first write after engaging from being skipped as "too small".
+        LastX = double.NaN;
+        LastY = double.NaN;
+
         if (takeover)
         {
             ScrollBarCommandHandler.Attach(scrollViewer, tracker);
@@ -130,6 +135,10 @@ internal sealed class ScrollBarTakeover(ScrollViewer scrollViewer, ScrollAnimati
 
     public void SetMaximum(Vector scrollableOffset)
     {
+        // Maximum is only ours while taken over; otherwise the template binding to
+        // ScrollViewer.ScrollableWidth/Height is already correct.
+        if (IsTakenOver is not true) return;
+
         if (HorizontalScrollBar is { } horizontal && horizontal.Maximum != scrollableOffset.X)
         {
             horizontal.Maximum = scrollableOffset.X;
@@ -141,18 +150,23 @@ internal sealed class ScrollBarTakeover(ScrollViewer scrollViewer, ScrollAnimati
         }
     }
 
+    // Writes every frame so the bar tracks the animated offset instead of the 40ms fold, but always
+    // through SetCurrentValue: unlike SetValue it leaves the template binding in place, so the bar
+    // still follows the ScrollViewer for drags, track clicks and programmatic offsets. At each fold
+    // the binding settles on the same value (the content offset is zeroed there), so there is no
+    // visible snap between the two writers.
     public void SetValue(double x, double y)
     {
         // !(<) so the initial NaN also passes.
         if (HorizontalScrollBar is { } horizontal && !(Math.Abs(x - LastX) < ScrollBarMinDelta))
         {
-            horizontal.SetValue(RangeBase.ValueProperty, x);
+            horizontal.SetCurrentValue(RangeBase.ValueProperty, x);
             LastX = x;
         }
 
         if (VerticalScrollBar is { } vertical && !(Math.Abs(y - LastY) < ScrollBarMinDelta))
         {
-            vertical.SetValue(RangeBase.ValueProperty, y);
+            vertical.SetCurrentValue(RangeBase.ValueProperty, y);
             LastY = y;
         }
     }
