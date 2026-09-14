@@ -57,7 +57,11 @@ internal static class ContentCache
             return;
         }
 
-        content.CacheMode ??= new BitmapCache();
+        content.CacheMode ??= new BitmapCache() 
+        {
+            EnableClearType = true,
+            SnapsToDevicePixels = true
+        };
         content.SetValue(IsCachedProperty, true);
         ApplyScale(content);
     }
