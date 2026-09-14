@@ -7,14 +7,12 @@
     Height="600"
     WindowStartupLocation="CenterScreen">
     <Window.Resources>
-        <!--  样式：分组标题（只保留字体大小和粗细，颜色继承默认）  -->
         <Style x:Key="SectionTitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="18" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,12,0,6" />
         </Style>
 
-        <!--  样式：控件卡片（只保留边框、圆角和间距，颜色依赖默认）  -->
         <Style x:Key="Card" TargetType="Border">
             <Setter Property="BorderBrush" Value="{x:Null}" />
             <Setter Property="BorderThickness" Value="0" />
@@ -24,7 +22,6 @@
             <Setter Property="Background" Value="{x:Null}" />
         </Style>
 
-        <!--  样式：控件标签  -->
         <Style x:Key="LabelStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Margin" Value="0,0,0,4" />
@@ -39,10 +36,8 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!--  ============ 左列 ============  -->
             <StackPanel Grid.Column="0">
 
-                <!--  标题  -->
                 <TextBlock
                     Margin="0,0,0,4"
                     FontSize="28"
@@ -53,7 +48,6 @@
                     FontSize="14"
                     Text="WPF 基本控件 · 滚动测试" />
 
-                <!--  文本输入组  -->
                 <TextBlock Style="{StaticResource SectionTitle}" Text="📝 文本输入" />
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
@@ -71,7 +65,6 @@
                     </StackPanel>
                 </Border>
 
-                <!--  按钮组  -->
                 <TextBlock Style="{StaticResource SectionTitle}" Text="🔘 按钮" />
                 <Border Style="{StaticResource Card}">
                     <WrapPanel>
@@ -96,7 +89,6 @@
                     </WrapPanel>
                 </Border>
 
-                <!--  选择控件组  -->
                 <TextBlock Style="{StaticResource SectionTitle}" Text="☑️ 选择控件" />
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
@@ -126,7 +118,6 @@
                     </StackPanel>
                 </Border>
 
-                <!--  日期控件组  -->
                 <TextBlock Style="{StaticResource SectionTitle}" Text="📅 日期与时间" />
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
@@ -139,10 +130,8 @@
 
             </StackPanel>
 
-            <!--  ============ 右列 ============  -->
             <StackPanel Grid.Column="2">
 
-                <!--  下拉选择组  -->
                 <TextBlock Style="{StaticResource SectionTitle}" Text="📋 下拉选择" />
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
@@ -171,7 +160,6 @@
                     </StackPanel>
                 </Border>
 
-                <!--  滑块与进度组  -->
                 <TextBlock Style="{StaticResource SectionTitle}" Text="📊 滑块与进度" />
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
@@ -199,7 +187,6 @@
                     </StackPanel>
                 </Border>
 
-                <!--  选项卡组  -->
                 <TextBlock Style="{StaticResource SectionTitle}" Text="📑 选项卡" />
                 <Border Style="{StaticResource Card}">
                     <TabControl>
@@ -219,7 +206,6 @@
                     </TabControl>
                 </Border>
 
-                <!--  分组框与边框组  -->
                 <TextBlock Style="{StaticResource SectionTitle}" Text="📦 分组容器" />
                 <Border Style="{StaticResource Card}">
                     <GroupBox Margin="0" Header="分组框示例">
@@ -231,7 +217,6 @@
                     </GroupBox>
                 </Border>
 
-                <!--  富文本组  -->
                 <TextBlock Style="{StaticResource SectionTitle}" Text="📄 富文本" />
                 <Border Style="{StaticResource Card}">
                     <RichTextBox Height="100">
@@ -247,7 +232,6 @@
                     </RichTextBox>
                 </Border>
 
-                <!--  底部占位  -->
                 <TextBlock
                     Margin="0,20,0,10"
                     HorizontalAlignment="Center"
