@@ -13,13 +13,33 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
 
     private const int ScrollUpdateIdleTimeoutMs = 160;
 
-    // Ctrl+wheel zoom sensitivity: the wheel delta is divided by this to get the zoom delta.
-    private const double ZoomWheelSensitivity = 600d;
-
     private readonly ScrollAnimationTracker Tracker;
     private readonly DispatcherTimer ScrollUpdateTimer;
+    private Vector MinimumScaleValue;
+    private Vector MaximumScaleValue;
+    private double ScrollDeltaValue;
+    private double ScrollDurationValue;
+    private double ZoomDeltaValue;
     private long LastScrollActivityTimestamp;
     private bool HasPendingScrollUpdate;
+
+    public override Vector MinimumScrollOffset => default;
+
+    public override Vector MaximumScrollOffset => Tracker.ScrollableOffset;
+
+    public override Vector CurrentOffset => Tracker.AnimatedOffset;
+
+    public override Vector CurrentScale => Tracker.ContentScale;
+
+    public override double ScrollDelta => ScrollDeltaValue;
+
+    public override double ScrollDuration => ScrollDurationValue;
+
+    public override double ZoomDelta => ZoomDeltaValue;
+
+    public override Vector MinimumScale => MinimumScaleValue;
+
+    public override Vector MaximumScale => MaximumScaleValue;
 
     public ScrollAnimation? ZoomAnimation
     {
@@ -30,14 +50,6 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
     {
         get; set => field = SwapAnimation(field, value);
     }
-
-    public override Vector MinimumScrollOffset => default;
-
-    public override Vector MaximumScrollOffset => Tracker.ScrollableOffset;
-
-    public override Vector CurrentOffset => Tracker.AnimatedOffset;
-
-    public override Vector CurrentScale => Tracker.ContentScale;
 
     public ScrollAnimationController(ScrollViewer scrollViewer) : base(scrollViewer)
     {
@@ -76,6 +88,7 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
             RootScrollViewer.MouseWheel += OnMouseWheel;
             SetHandlesMouseWheelScrolling(RootScrollViewer, false);
             Tracker.Initialize();
+            RefreshTuning();
         }
         else
         {
@@ -83,6 +96,15 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
             SetHandlesMouseWheelScrolling(RootScrollViewer, true);
             Tracker.Uninitialize();
         }
+    }
+
+    internal void RefreshTuning()
+    {
+        ScrollDeltaValue = ScrollAnimation.GetScrollDelta(RootScrollViewer);
+        ScrollDurationValue = ScrollAnimation.GetScrollDuration(RootScrollViewer);
+        MinimumScaleValue = ScrollAnimation.GetMinimumScale(RootScrollViewer);
+        MaximumScaleValue = ScrollAnimation.GetMaximumScale(RootScrollViewer);
+        ZoomDeltaValue = ScrollAnimation.GetZoomDelta(RootScrollViewer);
     }
 
     protected override void OnStart()
@@ -119,7 +141,10 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         {
             e.Handled = true;
             Tracker.ContentScaleCenter = e.GetPosition(RootScrollViewer).ToVector();
-            ZoomAnimation?.ScrollBy(new Vector(e.Delta, e.Delta) / ZoomWheelSensitivity);
+            // One notch is ZoomDelta; normalizing by the notch unit keeps multi-notch and
+            // high-resolution wheel deltas proportional.
+            var zoomDelta = e.Delta / Mouse.MouseWheelDeltaForOneLine * ZoomDelta;
+            ZoomAnimation?.ScrollBy(new Vector(zoomDelta, zoomDelta));
             ScrollAnimation?.Stop();
             return;
         }
@@ -127,15 +152,22 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         if (Keyboard.Modifiers is ModifierKeys.Shift && Tracker.CanHorizontalScroll)
         {
             e.Handled = true;
-            ScrollAnimation?.ScrollBy(new Vector(e.Delta, 0));
+            ScrollAnimation?.ScrollBy(new Vector(IsMouseWheelDeltaForOneLine(e.Delta) ?
+                e.Delta / Mouse.MouseWheelDeltaForOneLine * ScrollDelta : e.Delta, 0d));
             return;
         }
 
         if (Tracker.CanVerticallyScroll)
         {
             e.Handled = true;
-            ScrollAnimation?.ScrollBy(new Vector(0, e.Delta));
+            ScrollAnimation?.ScrollBy(new Vector(0d, IsMouseWheelDeltaForOneLine(e.Delta) ?
+                e.Delta / Mouse.MouseWheelDeltaForOneLine * ScrollDelta : e.Delta));
         }
+    }
+
+    private static bool IsMouseWheelDeltaForOneLine(double delta)
+    {
+        return delta % Mouse.MouseWheelDeltaForOneLine == 0;
     }
 
     private void OnScrollUpdateTimerTick(object? sender, EventArgs e)

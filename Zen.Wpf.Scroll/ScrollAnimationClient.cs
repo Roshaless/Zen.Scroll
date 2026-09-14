@@ -18,6 +18,16 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
 
     public abstract Vector CurrentScale { get; }
 
+    public abstract Vector MinimumScale { get; }
+
+    public abstract Vector MaximumScale { get; }
+
+    public abstract double ScrollDelta { get; }
+
+    public abstract double ScrollDuration { get; }
+
+    public abstract double ZoomDelta { get; }
+
     public bool IsActive { get; private set; }
 
     public abstract void UpdateScaleTarget(Vector scale);
@@ -95,4 +105,7 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
     }
 
     protected virtual void OnFrameRendered() { }
+
+    // A wheel delta that is not a whole line is from a touchpad (continuous fractional deltas).
+    public bool IsTouchPadScroll(Vector value) => value.X % ScrollDelta != 0 || value.Y % ScrollDelta != 0;
 }

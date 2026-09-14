@@ -261,7 +261,7 @@ internal sealed class ScrollAnimationTracker
         if (IsInitialized is not true) return;
 
         scale = scale.ValidOr(ContentScale)
-            .ConstrainedBetween(MinimumScale, MaximumScale);
+            .ConstrainedBetween(Client.MinimumScale, Client.MaximumScale);
 
         // Only record the pending scale: folding the anchor offset into PendingScrollOffset here
         // would clobber the frame's scroll target.
@@ -488,9 +488,9 @@ internal sealed class ScrollAnimationTracker
 
     // Treating (1 + epsilon) as "not zoomed" avoids churn from floating-point noise.
     private const double ScaleEpsilon = 1e-3;
-    private static readonly Vector MinimumScale = new(1, 1);
-    private static readonly Vector MaximumScale = new(10, 10);
-    private static readonly Vector UnitScale = MinimumScale;
+    // The unscaled identity, not the configured lower bound: content starts at 1x no matter how far
+    // out the caller allows zooming.
+    private static readonly Vector UnitScale = new(1, 1);
     private static readonly Vector MinDivisor = new(0.01, 0.01);
     private static bool IsScaledX(Vector scale) => scale.X - 1d > ScaleEpsilon;
     private static bool IsScaledY(Vector scale) => scale.Y - 1d > ScaleEpsilon;

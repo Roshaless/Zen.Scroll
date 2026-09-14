@@ -10,13 +10,10 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
 {
     // Caps the initial velocity per animation so very long distances don't look like a jump.
     private const double MaxInitialVelocity = 8000;
-
-    private const double DefaultTimeConstantMs = 80;
-
     private readonly KeySpline TouchPadEase = new();
     private Vector StartOffset;
     private Vector DestinationOffset;
-    private Vector ScrollDelta;
+    private Vector ScrollDistance;
     private Vector InitialVelocity;
     private Vector LastEmittedOffset;
     private double DurationSeconds;
@@ -24,16 +21,15 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
 
     public override void ScrollBy(Vector delta)
     {
-        if (IsTouchPadScroll(delta))
+        if (ScrollClient.IsTouchPadScroll(delta))
         {
             UseTouchPadScroll = true;
             ScrollByTouchPad(delta);
+            return;
         }
-        else
-        {
-            UseTouchPadScroll = false;
-            ScrollByCore(delta, DefaultTimeConstantMs);
-        }
+
+        UseTouchPadScroll = false;
+        ScrollByCore(delta, ScrollClient.ScrollDuration);
     }
 
     public override void ScrollBy(Vector delta, double duration)
@@ -43,7 +39,10 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
     }
 
     // Programmatic: there is no wheel event behind it, so never the touchpad curve.
-    public override void ScrollTo(Vector from, Vector to) => ScrollTo(from, to, DefaultTimeConstantMs);
+    public override void ScrollTo(Vector from, Vector to)
+    {
+        ScrollTo(from, to, ScrollClient.ScrollDuration);
+    }
 
     public override void ScrollTo(Vector from, Vector to, double duration)
     {
@@ -63,16 +62,12 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
     // While flying, new input accumulates onto the existing destination.
     private void ScrollByCore(Vector delta, double duration)
     {
-        if (IsAttached is not true) return;
-
         var fromOffset = ScrollClient.CurrentOffset;
         ScrollToCore(fromOffset, (IsActive ? DestinationOffset : fromOffset) - delta, duration);
     }
 
     private void ScrollToCore(Vector from, Vector to, double duration)
     {
-        if (IsAttached is not true) return;
-
         var destinationOffset = to.ConstrainedBetween(ScrollClient.MinimumScrollOffset, ScrollClient.MaximumScrollOffset);
 
         if (destinationOffset != from)
@@ -87,11 +82,11 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
 
     private void StartScroll(Vector fromOffset, Vector destinationOffset, double duration)
     {
-        ScrollDelta = destinationOffset - fromOffset;
+        ScrollDistance = destinationOffset - fromOffset;
         DurationSeconds = duration / MillisecondsPerSecond;
 
         // The asymptote of x(t) = v₀·τ·(1 − e^(−t/τ)) equals the requested distance exactly.
-        InitialVelocity = ScrollDelta / DurationSeconds;
+        InitialVelocity = ScrollDistance / DurationSeconds;
 
         // When clamping the velocity, stretch the duration with it,
         // or the curve would end early and stop short of the destination.
@@ -99,7 +94,7 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
         if (initialVelocityAbs > MaxInitialVelocity)
         {
             InitialVelocity *= MaxInitialVelocity / initialVelocityAbs;
-            DurationSeconds = ScrollDelta.Length / MaxInitialVelocity;
+            DurationSeconds = ScrollDistance.Length / MaxInitialVelocity;
         }
 
         StartOffset = fromOffset;
@@ -110,7 +105,7 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
 
     protected override void OnStop()
     {
-        ScrollDelta = default;
+        ScrollDistance = default;
         InitialVelocity = default;
         LastEmittedOffset = default;
         UseTouchPadScroll = false;
@@ -127,7 +122,6 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
     {
         var elapsedSeconds = elapsedTime.TotalSeconds;
         var decay = Math.Exp(-elapsedSeconds / DurationSeconds);
-
         EmitOffset(StartOffset + InitialVelocity * DurationSeconds * (1 - decay));
         return elapsedSeconds <= MaxAnimationSeconds;
     }
@@ -137,8 +131,7 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
         var elapsedSeconds = elapsedTime.TotalSeconds;
         var progress = Math.Min(elapsedSeconds / DurationSeconds, 1.0);
         progress = TouchPadEase.GetSplineProgress(progress);
-
-        EmitOffset(StartOffset + ScrollDelta * progress);
+        EmitOffset(StartOffset + ScrollDistance * progress);
         return elapsedSeconds <= DurationSeconds;
     }
 
@@ -150,7 +143,6 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
         var delta = offset - LastEmittedOffset;
         LastEmittedOffset = offset;
         if (delta.X == 0d && delta.Y == 0d) return;
-
         ScrollClient.UpdateScrollDelta(delta);
     }
 

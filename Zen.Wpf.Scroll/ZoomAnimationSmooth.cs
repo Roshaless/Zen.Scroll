@@ -5,8 +5,6 @@ namespace Zen.Scroll;
 public sealed class ZoomAnimationSmooth : ScrollAnimation
 {
     private const double DefaultTimeConstantMs = 60;
-    private Vector MinimumScale = new(1, 1);
-    private Vector MaximumScale = new(10, 10);
     private Vector ZoomFrom;
     private Vector ZoomTo;
     private Vector ZoomVelocity;
@@ -16,8 +14,6 @@ public sealed class ZoomAnimationSmooth : ScrollAnimation
 
     public override void ScrollBy(Vector delta, double duration)
     {
-        if (IsAttached is not true) return;
-
         // While flying, new input accumulates onto the existing destination.
         var targetBase = IsActive ? ZoomTo : ScrollClient.CurrentScale;
         ScrollTo(ScrollClient.CurrentScale, targetBase + delta, duration);
@@ -27,10 +23,13 @@ public sealed class ZoomAnimationSmooth : ScrollAnimation
 
     public override void ScrollTo(Vector from, Vector to, double duration)
     {
-        if (IsAttached is not true) return;
+        // The same bounds the tracker clamps to (read from the attached properties), so hitting a
+        // boundary is detected against the range the caller actually configured.
+        var minimumScale = ScrollClient.MinimumScale;
+        var maximumScale = ScrollClient.MaximumScale;
 
-        ZoomFrom = from.ConstrainedBetween(MinimumScale, MaximumScale);
-        ZoomTo = to.ConstrainedBetween(MinimumScale, MaximumScale);
+        ZoomFrom = from.ConstrainedBetween(minimumScale, maximumScale);
+        ZoomTo = to.ConstrainedBetween(minimumScale, maximumScale);
 
         // Already at a boundary (e.g. zooming further past the cap): nothing to animate.
         if (ZoomTo == ZoomFrom)
