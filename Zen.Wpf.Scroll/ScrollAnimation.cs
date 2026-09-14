@@ -28,6 +28,11 @@ public abstract class ScrollAnimation
 
     public abstract void ScrollBy(Vector delta, double duration);
 
+    // Absolute values in the same space as the ScrollBy delta: offsets for scroll, scale for zoom.
+    public abstract void ScrollTo(Vector from, Vector to);
+
+    public abstract void ScrollTo(Vector from, Vector to, double duration);
+
     public bool CheckAccess() => InternalScrollClient is not null;
 
     public void Start()

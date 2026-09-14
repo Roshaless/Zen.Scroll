@@ -18,8 +18,19 @@ public sealed class ZoomAnimationSmooth : ScrollAnimation
     {
         if (IsAttached is not true) return;
 
-        ZoomFrom = ScrollClient.CurrentScale;
-        ZoomTo = ((IsActive ? ZoomTo : ZoomFrom) + delta).ConstrainedBetween(MinimumScale, MaximumScale);
+        // While flying, new input accumulates onto the existing destination.
+        var targetBase = IsActive ? ZoomTo : ScrollClient.CurrentScale;
+        ScrollTo(ScrollClient.CurrentScale, targetBase + delta, duration);
+    }
+
+    public override void ScrollTo(Vector from, Vector to) => ScrollTo(from, to, DefaultTimeConstantMs);
+
+    public override void ScrollTo(Vector from, Vector to, double duration)
+    {
+        if (IsAttached is not true) return;
+
+        ZoomFrom = from.ConstrainedBetween(MinimumScale, MaximumScale);
+        ZoomTo = to.ConstrainedBetween(MinimumScale, MaximumScale);
 
         // Already at a boundary (e.g. zooming further past the cap): nothing to animate.
         if (ZoomTo == ZoomFrom)

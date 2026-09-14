@@ -42,6 +42,15 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
         ScrollByCore(delta, duration);
     }
 
+    // Programmatic: there is no wheel event behind it, so never the touchpad curve.
+    public override void ScrollTo(Vector from, Vector to) => ScrollTo(from, to, DefaultTimeConstantMs);
+
+    public override void ScrollTo(Vector from, Vector to, double duration)
+    {
+        UseTouchPadScroll = false;
+        ScrollToCore(from, to, duration);
+    }
+
     private void ScrollByTouchPad(Vector delta)
     {
         var intervalMs = TimeSinceStart().TotalMilliseconds;
@@ -57,12 +66,18 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
         if (IsAttached is not true) return;
 
         var fromOffset = ScrollClient.CurrentOffset;
-        var destinationOffset = (IsActive ? DestinationOffset - delta : fromOffset - delta)
-            .ConstrainedBetween(ScrollClient.MinimumScrollOffset, ScrollClient.MaximumScrollOffset);
+        ScrollToCore(fromOffset, (IsActive ? DestinationOffset : fromOffset) - delta, duration);
+    }
 
-        if (destinationOffset != fromOffset)
+    private void ScrollToCore(Vector from, Vector to, double duration)
+    {
+        if (IsAttached is not true) return;
+
+        var destinationOffset = to.ConstrainedBetween(ScrollClient.MinimumScrollOffset, ScrollClient.MaximumScrollOffset);
+
+        if (destinationOffset != from)
         {
-            StartScroll(fromOffset, destinationOffset, duration);
+            StartScroll(from, destinationOffset, duration);
         }
         else if (ScrollClient.IsActive)
         {
