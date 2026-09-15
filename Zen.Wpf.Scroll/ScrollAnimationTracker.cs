@@ -20,8 +20,8 @@ internal sealed class ScrollAnimationTracker
     private readonly DependencyPropertyDescriptor ContentPropertyDescriptor;
     private readonly DependencyPropertyDescriptor TemplatePropertyDescriptor;
 
-    private ScrollContentPresenter? ScrollContentPresenter { get; set; }
-    private FrameworkElement? ScrollContentObject { get; set; }
+    public ScrollContentPresenter? ScrollContentPresenter { get; private set; }
+    public FrameworkElement? ScrollContentObject { get; private set; }
 
     public bool IsInitialized
     {

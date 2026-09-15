@@ -1,27 +1,19 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Threading;
+using System.Windows.Media;
 
 namespace Zen.Scroll;
 
 public sealed class ScrollAnimationController : ScrollAnimationClient
 {
-    // How often the in-flight content offset is folded back into the real scroll position (ms).
-    private const int ScrollUpdateIntervalMs = 40;
-
-    private const int ScrollUpdateIdleTimeoutMs = 160;
-
     private readonly ScrollAnimationTracker Tracker;
-    private readonly DispatcherTimer ScrollUpdateTimer;
     private Vector MinimumScaleValue;
     private Vector MaximumScaleValue;
     private double ScrollDeltaValue;
     private double ScrollDurationValue;
     private double ZoomDeltaValue;
-    private long LastScrollActivityTimestamp;
-    private bool HasPendingScrollUpdate;
 
     public override Vector MinimumScrollOffset => default;
 
@@ -60,12 +52,6 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         ScrollViewer.SetCanContentScroll(scrollViewer, false);
         VirtualizingPanel.SetScrollUnit(scrollViewer, ScrollUnit.Pixel);
         VirtualizingPanel.SetVirtualizationMode(scrollViewer, VirtualizationMode.Recycling);
-
-        ScrollUpdateTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(ScrollUpdateIntervalMs),
-        };
-        ScrollUpdateTimer.Tick += OnScrollUpdateTimerTick;
     }
 
     private ScrollAnimation? SwapAnimation(ScrollAnimation? oldValue, ScrollAnimation? newValue)
@@ -86,14 +72,22 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         {
             RootScrollViewer.MouseWheel -= OnMouseWheel;
             RootScrollViewer.MouseWheel += OnMouseWheel;
-            SetHandlesMouseWheelScrolling(RootScrollViewer, false);
+            HandlesMouseWheelScrolling(RootScrollViewer, false);
             Tracker.Initialize();
+
+            if (Tracker.ScrollContentObject is not null)
+                ResumeLayout(null!, Tracker.ScrollContentObject);
+
             RefreshTuning();
         }
         else
         {
             RootScrollViewer.MouseWheel -= OnMouseWheel;
-            SetHandlesMouseWheelScrolling(RootScrollViewer, true);
+            HandlesMouseWheelScrolling(RootScrollViewer, true);
+
+            if (Tracker.ScrollContentObject is not null)
+                ResumeLayout(null!, Tracker.ScrollContentObject);
+
             Tracker.Uninitialize();
         }
     }
@@ -109,23 +103,26 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
 
     protected override void OnStart()
     {
+        if (Tracker.ScrollContentObject is not null)
+            SuspendLayout(Tracker.ScrollContentObject);
+
         Tracker.SyncScrollableOffset();
-        RequestScrollUpdate();
         base.OnStart();
     }
 
     protected override void OnStop()
     {
+        if (Tracker.ScrollContentObject is not null)
+            ResumeLayout(null!, Tracker.ScrollContentObject);
+
         Tracker.ApplyAnimatedOffset();
         Tracker.CommitContentCacheScale();
-        StopScrollUpdateTimer();
         base.OnStop();
     }
 
     protected override void OnFrameRendered()
     {
         Tracker.FlushFrame();
-        RequestScrollUpdate();
     }
 
     public override void UpdateScrollDelta(Vector delta) => Tracker.ApplyScrollDelta(delta);
@@ -170,49 +167,38 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         return delta % Mouse.MouseWheelDeltaForOneLine == 0;
     }
 
-    private void OnScrollUpdateTimerTick(object? sender, EventArgs e)
+    private static Action<Visual> BuildSuspend(MethodInfo method)
     {
-        if (HasPendingScrollUpdate)
-        {
-            HasPendingScrollUpdate = false;
-            Tracker.ApplyAnimatedOffset();
-        }
-
-        // Stop the timer after a while without scroll activity.
-        if (Environment.TickCount64 - LastScrollActivityTimestamp >= ScrollUpdateIdleTimeoutMs)
-        {
-            StopScrollUpdateTimer();
-        }
+        // v => UIElement.PropagateSuspendLayout(v)
+        var v = System.Linq.Expressions.Expression.Parameter(typeof(Visual), "v");
+        var call = System.Linq.Expressions.Expression.Call(method, v);
+        return System.Linq.Expressions.Expression.Lambda<Action<Visual>>(call, v).Compile();
     }
 
-    private void RequestScrollUpdate()
+    private static Action<Visual, Visual> BuildResume(MethodInfo method)
     {
-        HasPendingScrollUpdate = true;
-        LastScrollActivityTimestamp = Environment.TickCount64;
-
-        if (ScrollUpdateTimer.IsEnabled is not true)
-        {
-            ScrollUpdateTimer.Start();
-        }
+        // (parent, v) => UIElement.PropagateResumeLayout(parent, v)
+        var parent = System.Linq.Expressions.Expression.Parameter(typeof(Visual), "parent");
+        var v = System.Linq.Expressions.Expression.Parameter(typeof(Visual), "v");
+        var call = System.Linq.Expressions.Expression.Call(method, parent, v);
+        return System.Linq.Expressions.Expression.Lambda<Action<Visual, Visual>>(call, parent, v).Compile();
     }
 
-    private void StopScrollUpdateTimer()
+    private static Action<ScrollViewer, bool> BuildHandlesMouseWheelScrolling(MethodInfo setter)
     {
-        HasPendingScrollUpdate = false;
-        if (ScrollUpdateTimer.IsEnabled)
-        {
-            ScrollUpdateTimer.Stop();
-        }
+        // (sv, value) => sv.set_HandlesMouseWheelScrolling(value)
+        var sv = System.Linq.Expressions.Expression.Parameter(typeof(ScrollViewer), "sv");
+        var value = System.Linq.Expressions.Expression.Parameter(typeof(bool), "value");
+        var call = System.Linq.Expressions.Expression.Call(sv, setter, value);
+        return System.Linq.Expressions.Expression.Lambda<Action<ScrollViewer, bool>>(call, sv, value).Compile();
     }
 
-#if NET8_0_OR_GREATER
-    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "set_HandlesMouseWheelScrolling")]
-    private static extern void SetHandlesMouseWheelScrolling(ScrollViewer scrollViewer, bool value);
-#else
-    private static void SetHandlesMouseWheelScrolling(ScrollViewer scrollViewer, bool value)
-    {
-        var internalFlag = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
-        typeof(ScrollViewer).GetMethod("set_HandlesMouseWheelScrolling", internalFlag).Invoke(scrollViewer, [value]);
-    }
-#endif
+    private static readonly Action<Visual> SuspendLayout = BuildSuspend(typeof(UIElement).GetMethod(
+        "PropagateSuspendLayout", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!);
+
+    private static readonly Action<Visual, Visual> ResumeLayout = BuildResume(typeof(UIElement).GetMethod(
+        "PropagateResumeLayout", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!);
+
+    private static readonly Action<ScrollViewer, bool> HandlesMouseWheelScrolling = BuildHandlesMouseWheelScrolling(
+        typeof(ScrollViewer).GetMethod("set_HandlesMouseWheelScrolling", BindingFlags.NonPublic | BindingFlags.Instance)!);
 }
