@@ -17,7 +17,7 @@
 
 - 🎛️ 启用 —— 设置 `ScrollAnimation.IsEnabled` 附加属性，支持 XAML 与代码
 
-- ⚡ 高性能 —— GPU 加速的视觉层变换，延迟合并布局更新
+- ⚡ 高性能 —— GPU 加速的视觉层变换，减少内容布局触发
 
 - 🧩 无缝集成 —— 基于 `ScrollViewer` 扩展，无需重写布局或更改模板
 
@@ -114,7 +114,7 @@ bool enabled = ScrollAnimation.GetIsEnabled(myScrollViewer);
 | ---- | ---- |
 | `ScrollAnimation`（`Smooth` / `ZoomAnimationSmooth`） | 计算本帧的滚动/缩放增量，只提交目标，不触碰视觉元素 |
 | `ScrollAnimationClient` | 动画只读的宿主契约：滚动/缩放状态与可调参数 |
-| `ScrollAnimationController` | 输入拦截、动画生命周期、低频折算定时器、可调参数的缓存与下发 |
+| `ScrollAnimationController` | 输入拦截、动画生命周期、布局的暂停与恢复、可调参数的缓存与下发 |
 | `ScrollAnimationTracker` | 跟踪滚动/缩放状态，合成内容变换与滚动条更新（含可视量 ⇄ 内容量的纯计算） |
 | `ContentCache` / `ScrollBarCommandHandler` | 位图缓存管理 / 滚动条命令接管 |
 
@@ -123,12 +123,13 @@ bool enabled = ScrollAnimation.GetIsEnabled(myScrollViewer);
 ```mermaid
 graph TD
     A[用户滚轮 / 触控板输入] --> B{Controller 拦截输入}
-    B --> C[ScrollAnimation 计算本帧增量]
-    C --> D[Tracker 提交待应用目标]
-    D --> E[每帧 FlushFrame 合成]
-    E --> F[内容变换 + 滚动条（GPU 合成）]
-    C --> G[低频定时器折算内容偏移]
-    G --> F
+    B --> G[动画开始：暂停内容布局]
+    G --> C[ScrollAnimation 计算本帧增量]
+    C --> D[Client 提交待应用目标]
+    C --> E[等待每帧 FlushFrame 合成]
+    D --> F[ MatrixTransform 内容变换 （GPU 合成） ]
+    E --> F
+    F --> H[动画结束：恢复布局并折算内容偏移]
 
 ```
 
@@ -136,9 +137,11 @@ graph TD
 |  优化点   | 实现方式  |
 |  ----  | ----  |
 | 视觉层驱动  | 基于内容坐标变换，完全 GPU 加速，依赖 WPF 渲染管线 |
-| 延迟合并更新  | 滚动期间，通过低频周期同步动画偏移与布局状态，平衡性能与响应 |
+| 布局暂停  | 动画期间暂停内容子树的布局更新，结束时恢复并折算偏移，逐帧的失效请求不再各自触发布局 |
 | 双变换同步 | 元素位置与滚动偏移交替变换，实现视觉与逻辑状态双同步 |
 | 参数读取 | 可调参数在附加属性变更时推送到控制器缓存，动画与逐帧逻辑只读字段 |
+
+> 动画期间内容子树的布局请求会被推迟到动画结束统一处理，因此滚动过程中的元素尺寸变化不会立即生效。
 
 ---
 
