@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -6,8 +7,9 @@ using System.Windows.Media;
 
 namespace Zen.Scroll;
 
-// Once the scrollbar is taken over, Thumb drags and paging commands must run inside the
-// content-transform system instead of the ScrollViewer's native offset commits.
+// Scrollbar commands (dragging, paging, line, scroll-to-end) run inside the content-transform
+// system instead of the ScrollViewer's native offset commits: they then retarget the running
+// animation rather than being fought by it.
 internal static class ScrollBarCommandHandler
 {
     private const double ScrollLineDelta = 16d;
@@ -44,6 +46,15 @@ internal static class ScrollBarCommandHandler
     {
         if (e.Handled) return;
         if (TryGetTracker(sender, e.Command, e.OriginalSource, out var tracker) is not true) return;
+
+        // See OnPreviewExecuted: an explicit jump is not available while an animation is running.
+        if (tracker.IsAnimating)
+        {
+            e.CanExecute = false;
+            e.Handled = true;
+            return;
+        }
+
         if (TryResolveScrollTarget(tracker, e.Command, e.Parameter, out _, out _) is not true) return;
 
         e.CanExecute = true;
@@ -54,6 +65,17 @@ internal static class ScrollBarCommandHandler
     {
         if (e.Handled) return;
         if (TryGetTracker(sender, e.Command, e.OriginalSource, out var tracker) is not true) return;
+
+        // An explicit jump has nowhere to land while an animation is still running: the animation keeps
+        // re-emitting towards the target it captured before and drags the content back. Drop the command
+        // rather than let the two fight — it works again as soon as the animation settles. Dragging
+        // (the deferred commands) is left alone: it is continuous input, not a jump.
+        if (tracker.IsAnimating)
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (TryResolveScrollTarget(tracker, e.Command, e.Parameter, out var isVertical, out var target) is not true) return;
 
         e.Handled = true;

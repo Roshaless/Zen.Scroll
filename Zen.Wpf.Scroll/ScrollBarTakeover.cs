@@ -69,6 +69,8 @@ internal sealed class ScrollBarTakeover(ScrollViewer scrollViewer, ScrollAnimati
             LastY = double.NaN;
         }
 
+        ScrollBarCommandHandler.Attach(scrollViewer, tracker);
+
         IsTakenOver = null;
     }
 
@@ -110,8 +112,6 @@ internal sealed class ScrollBarTakeover(ScrollViewer scrollViewer, ScrollAnimati
 
         if (takeover)
         {
-            ScrollBarCommandHandler.Attach(scrollViewer, tracker);
-
             // Maximum and Value are owned exclusively now: clear the template bindings explicitly,
             // otherwise they snap the bar back to native values whenever our value doesn't change
             // (can't rely on "our write implicitly clears the binding").
@@ -123,8 +123,6 @@ internal sealed class ScrollBarTakeover(ScrollViewer scrollViewer, ScrollAnimati
         }
         else
         {
-            ScrollBarCommandHandler.Detach(scrollViewer);
-
             RestoreBindings(HorizontalScrollBar, DefaultHorizontalMaximumBinding, DefaultHorizontalOffsetBinding);
             RestoreBindings(VerticalScrollBar, DefaultVerticalMaximumBinding, DefaultVerticalOffsetBinding);
 

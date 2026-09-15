@@ -7,7 +7,6 @@ public sealed class ZoomAnimationSmooth : ScrollAnimation
     private const double DefaultTimeConstantMs = 60;
     private Vector ZoomFrom;
     private Vector ZoomTo;
-    private Vector ZoomVelocity;
     private double ZoomDurationSeconds;
 
     public override void ScrollBy(Vector delta) => ScrollBy(delta, DefaultTimeConstantMs);
@@ -36,22 +35,23 @@ public sealed class ZoomAnimationSmooth : ScrollAnimation
             return;
 
         ZoomDurationSeconds = Math.Max(duration, 1) / MillisecondsPerSecond;
-        ZoomVelocity = (ZoomTo - ZoomFrom) / ZoomDurationSeconds;
         Start();
     }
 
     protected override void OnStop()
     {
-        ZoomVelocity = default;
         ZoomTo = ZoomFrom;
     }
 
     public override bool ServiceAnimation(TimeSpan elapsedTime)
     {
         var elapsedSeconds = elapsedTime.TotalSeconds;
-        var decay = Math.Exp(-elapsedSeconds / ZoomDurationSeconds);
-        var newScale = ZoomFrom + ZoomVelocity * ZoomDurationSeconds * (1 - decay);
-        ScrollClient.UpdateScaleTarget(newScale);
+
+        // The asymptote is the target scale, so the scale at any time is the target minus what is still to
+        // come: one product serves both the value and the stop test. v₀·τ is the requested change
+        // (ZoomTo − ZoomFrom), so the velocity itself does not have to be kept.
+        var tail = (ZoomTo - ZoomFrom) * Math.Exp(-elapsedSeconds / ZoomDurationSeconds);
+        ScrollClient.UpdateScaleTarget(ZoomTo - tail);
         return elapsedSeconds <= MaxAnimationSeconds;
     }
 }

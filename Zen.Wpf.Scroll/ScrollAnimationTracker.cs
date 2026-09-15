@@ -70,6 +70,8 @@ internal sealed class ScrollAnimationTracker
         && (RootScrollViewer.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled
             || RootScrollViewer.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled);
 
+    public bool IsAnimating => Client.IsActive;
+
     public bool IsRootScrollViewer { get; private set; }
 
     public bool IsZoomDisabled { get; private set; }
