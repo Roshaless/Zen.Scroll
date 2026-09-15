@@ -158,13 +158,13 @@ internal sealed class ScrollBarTakeover(ScrollViewer scrollViewer, ScrollAnimati
         // !(<) so the initial NaN also passes.
         if (HorizontalScrollBar is { } horizontal && !(Math.Abs(x - LastX) < ScrollBarMinDelta))
         {
-            horizontal.SetCurrentValue(RangeBase.ValueProperty, x);
+            horizontal.SetValue(RangeBase.ValueProperty, x);
             LastX = x;
         }
 
         if (VerticalScrollBar is { } vertical && !(Math.Abs(y - LastY) < ScrollBarMinDelta))
         {
-            vertical.SetCurrentValue(RangeBase.ValueProperty, y);
+            vertical.SetValue(RangeBase.ValueProperty, y);
             LastY = y;
         }
     }
