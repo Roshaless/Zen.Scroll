@@ -10,14 +10,6 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
 {
     // Caps the initial velocity per animation so very long distances don't look like a jump.
     private const double MaxInitialVelocity = 8000;
-
-    // Pixels still to travel when the curve counts as settled: a whole pixel. A wheel notch is tens of
-    // pixels, so by the time a single pixel is left the curve is down to a fraction of a pixel per
-    // frame — the motion has visibly ended — and the distance that remains is applied in one step that
-    // stays under a pixel. Anything larger trades a longer visible jump for little time: the settle
-    // time is τ·ln(D/ε), so doubling ε only takes about a quarter of a time constant off the tail.
-    private const double ArrivalEpsilonPixels = 1d;
-
     private readonly KeySpline TouchPadEase = new();
     private Vector StartOffset;
     private Vector DestinationOffset;
@@ -123,24 +115,10 @@ public sealed class ScrollAnimationSmooth : ScrollAnimation
 
     private bool ServiceAnimationMouseWheel(TimeSpan elapsedTime)
     {
-        var decay = Math.Exp(-elapsedTime.TotalSeconds / DurationSeconds);
-
-        // The asymptote is the destination, so the offset at any time is the destination minus what is
-        // still to travel — and that tail is also what decides when the curve is done. Waiting for it to
-        // converge on its own would keep the animation running for several more tenths of a second while
-        // it moves a small fraction of a pixel per frame.
-        var tail = ScrollDistance * decay;
-
-        // Only the comparison needs a magnitude, so the squared length saves a square root per frame; the
-        // threshold is a constant and its square folds away at compile time.
-        if (tail.LengthSquared < ArrivalEpsilonPixels * ArrivalEpsilonPixels)
-        {
-            EmitOffset(DestinationOffset);
-            return false;
-        }
-
-        EmitOffset(DestinationOffset - tail);
-        return true;
+        var elapsedSeconds = elapsedTime.TotalSeconds;
+        var decay = Math.Exp(-elapsedSeconds / DurationSeconds);
+        EmitOffset(DestinationOffset - ScrollDistance * decay);
+        return elapsedSeconds <= MaxAnimationSeconds;
     }
 
     private bool ServiceAnimationTouchPadScroll(TimeSpan elapsedTime)
