@@ -1,8 +1,7 @@
-﻿using System.Reflection;
+﻿using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 
 namespace Zen.Scroll;
 
@@ -72,21 +71,15 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         {
             RootScrollViewer.MouseWheel -= OnMouseWheel;
             RootScrollViewer.MouseWheel += OnMouseWheel;
-            HandlesMouseWheelScrolling(RootScrollViewer, false);
+            SetHandlesMouseWheelScrolling(RootScrollViewer, false);
             Tracker.Initialize();
-
-            if (Tracker.ScrollContentObject is not null)
-                ResumeLayout(null!, Tracker.ScrollContentObject);
 
             RefreshTuning();
         }
         else
         {
             RootScrollViewer.MouseWheel -= OnMouseWheel;
-            HandlesMouseWheelScrolling(RootScrollViewer, true);
-
-            if (Tracker.ScrollContentObject is not null)
-                ResumeLayout(null!, Tracker.ScrollContentObject);
+            SetHandlesMouseWheelScrolling(RootScrollViewer, true);
 
             Tracker.Uninitialize();
         }
@@ -103,18 +96,12 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
 
     protected override void OnStart()
     {
-        if (Tracker.ScrollContentObject is not null)
-            SuspendLayout(Tracker.ScrollContentObject);
-
         Tracker.SyncScrollableOffset();
         base.OnStart();
     }
 
     protected override void OnStop()
     {
-        if (Tracker.ScrollContentObject is not null)
-            ResumeLayout(null!, Tracker.ScrollContentObject);
-
         Tracker.ApplyAnimatedOffset();
         Tracker.CommitContentCacheScale();
         base.OnStop();
@@ -167,38 +154,14 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         return delta % Mouse.MouseWheelDeltaForOneLine == 0;
     }
 
-    private static Action<Visual> BuildSuspend(MethodInfo method)
+#if NET8_0_OR_GREATER
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "set_HandlesMouseWheelScrolling")]
+    private static extern void SetHandlesMouseWheelScrolling(ScrollViewer scrollViewer, bool value);
+#else
+    private static void SetHandlesMouseWheelScrolling(ScrollViewer scrollViewer, bool value)
     {
-        // v => UIElement.PropagateSuspendLayout(v)
-        var v = System.Linq.Expressions.Expression.Parameter(typeof(Visual), "v");
-        var call = System.Linq.Expressions.Expression.Call(method, v);
-        return System.Linq.Expressions.Expression.Lambda<Action<Visual>>(call, v).Compile();
+        var internalFlag = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        typeof(ScrollViewer).GetMethod("set_HandlesMouseWheelScrolling", internalFlag).Invoke(scrollViewer, [value]);
     }
-
-    private static Action<Visual, Visual> BuildResume(MethodInfo method)
-    {
-        // (parent, v) => UIElement.PropagateResumeLayout(parent, v)
-        var parent = System.Linq.Expressions.Expression.Parameter(typeof(Visual), "parent");
-        var v = System.Linq.Expressions.Expression.Parameter(typeof(Visual), "v");
-        var call = System.Linq.Expressions.Expression.Call(method, parent, v);
-        return System.Linq.Expressions.Expression.Lambda<Action<Visual, Visual>>(call, parent, v).Compile();
-    }
-
-    private static Action<ScrollViewer, bool> BuildHandlesMouseWheelScrolling(MethodInfo setter)
-    {
-        // (sv, value) => sv.set_HandlesMouseWheelScrolling(value)
-        var sv = System.Linq.Expressions.Expression.Parameter(typeof(ScrollViewer), "sv");
-        var value = System.Linq.Expressions.Expression.Parameter(typeof(bool), "value");
-        var call = System.Linq.Expressions.Expression.Call(sv, setter, value);
-        return System.Linq.Expressions.Expression.Lambda<Action<ScrollViewer, bool>>(call, sv, value).Compile();
-    }
-
-    private static readonly Action<Visual> SuspendLayout = BuildSuspend(typeof(UIElement).GetMethod(
-        "PropagateSuspendLayout", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!);
-
-    private static readonly Action<Visual, Visual> ResumeLayout = BuildResume(typeof(UIElement).GetMethod(
-        "PropagateResumeLayout", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!);
-
-    private static readonly Action<ScrollViewer, bool> HandlesMouseWheelScrolling = BuildHandlesMouseWheelScrolling(
-        typeof(ScrollViewer).GetMethod("set_HandlesMouseWheelScrolling", BindingFlags.NonPublic | BindingFlags.Instance)!);
+#endif
 }
