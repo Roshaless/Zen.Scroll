@@ -69,8 +69,12 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
     {
         if (isEnabled)
         {
-            RootScrollViewer.MouseWheel -= OnMouseWheel;
-            RootScrollViewer.MouseWheel += OnMouseWheel;
+            RootScrollViewer.RemoveHandlerTyped(UIElement.MouseWheelEvent, OnMouseWheel);
+            RootScrollViewer.AddHandlerTyped(UIElement.MouseWheelEvent, OnMouseWheel, false);
+
+            RootScrollViewer.RemoveHandlerTyped(UIElement.MouseHorizontalWheelEvent, OnMouseHorizontalWheel);
+            RootScrollViewer.AddHandlerTyped(UIElement.MouseHorizontalWheelEvent, OnMouseHorizontalWheel, false);
+
             SetHandlesMouseWheelScrolling(RootScrollViewer, false);
             Tracker.Initialize();
 
@@ -78,7 +82,8 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         }
         else
         {
-            RootScrollViewer.MouseWheel -= OnMouseWheel;
+            RootScrollViewer.RemoveHandlerTyped(UIElement.MouseWheelEvent, OnMouseWheel);
+            RootScrollViewer.RemoveHandlerTyped(UIElement.MouseHorizontalWheelEvent, OnMouseHorizontalWheel);
             SetHandlesMouseWheelScrolling(RootScrollViewer, true);
 
             Tracker.Uninitialize();
@@ -115,6 +120,20 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
     public override void UpdateScrollDelta(Vector delta) => Tracker.ApplyScrollDelta(delta);
 
     public override void UpdateScaleTarget(Vector scale) => Tracker.SetContentScale(scale);
+
+    private void OnMouseHorizontalWheel(object? sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled || Tracker.IsInitialized is not true)
+            return;
+
+        if (Tracker.CanHorizontalScroll)
+        {
+            e.Handled = true;
+            ScrollAnimation?.ScrollBy(new Vector(IsMouseWheelDeltaForOneLine(e.Delta) ?
+                e.Delta / Mouse.MouseWheelDeltaForOneLine * ScrollDelta : e.Delta, 0d));
+            return;
+        }
+    }
 
     private void OnMouseWheel(object? sender, MouseWheelEventArgs e)
     {
