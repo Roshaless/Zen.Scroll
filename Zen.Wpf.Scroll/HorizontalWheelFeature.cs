@@ -389,14 +389,12 @@ namespace System.Windows
     }
     file static class SecurityCriticalDataStatic
     {
-        private static readonly Type SecurityCriticalDataType = WPFAssemblies.PresentationCoreAssembly.GetType("MS.Internal.SecurityCriticalData'1")!;
         private static readonly Dictionary<Type, Func<object, object>> TypedGetters = [];
         public static object GetValue(object instance, Type valueType)
         {
             if (TypedGetters.TryGetValue(valueType, out var getter) is not true)
             {
-                var t = SecurityCriticalDataType.MakeGenericType(valueType);
-                TypedGetters.Add(valueType, getter = ExpressionAccessor.BuildGetter(SecurityCriticalDataType.MakeGenericType(valueType), "Value"));
+                TypedGetters.Add(valueType, getter = ExpressionAccessor.BuildGetter(instance.GetType(), "Value"));
             }
 
             return getter(instance);
