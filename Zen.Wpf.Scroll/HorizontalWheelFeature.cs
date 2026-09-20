@@ -93,8 +93,8 @@ namespace System.Windows
                     var report = InputReportEventArgsStatic.GetReport(input);
                     var actions = RawMouseInputReportStatic.GetActions(report);
 
-                    //if ((_inputSource != null) && (rawMouseInputReport.InputSource == _inputSource.Value))
-                    if (MouseDeviceStatic.GetInputSource(mouseDevice) == InputReportStatic.GetInputSource(report))
+                    var inputSource = MouseDeviceStatic.GetInputSource(mouseDevice);
+                    if (inputSource != null && InputReportStatic.GetInputSource(report) == inputSource)
                     {
                         // Raw --> PreviewMouseHorizontalWheel
                         if ((Convert.ToInt32(actions) & 0x20000) == 0x20000)
