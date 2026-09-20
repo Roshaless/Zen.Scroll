@@ -29,15 +29,20 @@ namespace System.Windows
                     new RoutedEventHandler(OnWindowLoaded));
 
                 MouseHorizontalWheelHook.Initialize();
-                OnWindowLoaded(Application.Current.MainWindow, EventArgs.Empty);
+                OnWindowLoaded(null!, EventArgs.Empty);
             });
         }
 
         private static void OnWindowLoaded(object sender, EventArgs e)
         {
-            if (sender is Window window)
+            if (Application.Current is null) return;
+
+            foreach (Window window in Application.Current.Windows)
             {
-                MouseHorizontalWheelHook.InitializeHook(window);
+                if (window.IsLoaded)
+                {
+                    MouseHorizontalWheelHook.InitializeHook(window);
+                }
             }
         }
     }
