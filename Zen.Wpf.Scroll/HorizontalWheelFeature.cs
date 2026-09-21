@@ -70,12 +70,12 @@ namespace System.Windows
                 var inputSource = MouseDeviceStatic.GetInputSource(mouseDevice);
                 if (inputSource != null && InputReportStatic.GetInputSource(report) == inputSource)
                 {
-                if ((Convert.ToInt32(actions) & 0x20000) == 0x20000)
-                {
-                    InputManangerStatic.SetMostRecentInputDevice(e.InputManager, input.Device);
+                    if ((Convert.ToInt32(actions) & 0x20000) == 0x20000)
+                    {
+                        InputManangerStatic.SetMostRecentInputDevice(e.InputManager, input.Device);
+                    }
                 }
             }
-        }
         }
 
         private static void OnPostProcessInput(object sender, ProcessInputEventArgs e)
@@ -237,28 +237,6 @@ namespace System.Windows
         {
             public static RoutedEvent PreviewMouseHorizontalWheelEvent => UIElementPreviewMouseHorizontalWheelEvent;
             public static RoutedEvent MouseHorizontalWheelEvent => UIElementMouseWheelEvent;
-
-            public void AddHandlerTyped<T>(RoutedEvent routedEvent, T handler, bool handledEventsToo) where T : Delegate
-            {
-                Delegate typed = handler;
-                if (routedEvent.HandlerType.IsInstanceOfType(handler) is not true)
-                {
-                    typed = Delegate.CreateDelegate(routedEvent.HandlerType, handler.Target, handler.Method);
-                }
-
-                element.AddHandler(routedEvent, typed, handledEventsToo);
-            }
-
-            public void RemoveHandlerTyped<T>(RoutedEvent routedEvent, T handler) where T : Delegate
-            {
-                Delegate typed = handler;
-                if (routedEvent.HandlerType.IsInstanceOfType(handler) is not true)
-                {
-                    typed = Delegate.CreateDelegate(routedEvent.HandlerType, handler.Target, handler.Method);
-                }
-
-                element.RemoveHandler(routedEvent, typed);
-            }
         }
     }
 
@@ -280,6 +258,26 @@ namespace System.Windows
             {
                 public static RoutedEvent PreviewMouseHorizontalWheelEvent => BasePreviewMouseHorizontalWheelEvent;
                 public static RoutedEvent MouseHorizontalWheelEvent => BaseMouseHorizontalWheelEvent;
+
+                public static void AddPreviewMouseHorizontalWheelHandler(DependencyObject element, MouseWheelEventHandler handler)
+                {
+                    UIElementStatic.AddHandler(element, BasePreviewMouseHorizontalWheelEvent, handler);
+                }
+
+                public static void RemovePreviewMouseHorizontalWheelHandler(DependencyObject element, MouseWheelEventHandler handler)
+                {
+                    UIElementStatic.RemoveHandler(element, BasePreviewMouseHorizontalWheelEvent, handler);
+                }
+
+                public static void AddMouseHorizontalWheelHandler(DependencyObject element, MouseWheelEventHandler handler)
+                {
+                    UIElementStatic.AddHandler(element, BaseMouseHorizontalWheelEvent, handler);
+                }
+
+                public static void RemoveMouseHorizontalWheelHandler(DependencyObject element, MouseWheelEventHandler handler)
+                {
+                    UIElementStatic.RemoveHandler(element, BaseMouseHorizontalWheelEvent, handler);
+                }
             }
         }
     }
@@ -401,6 +399,23 @@ namespace System.Windows
 
             return getter(instance);
         }
+    }
+    file static class UIElementStatic
+    {
+        private static readonly Action<DependencyObject, RoutedEvent, Delegate> AddHandlerStatic =
+            (Action<DependencyObject, RoutedEvent, Delegate>)Delegate.CreateDelegate(
+                typeof(Action<DependencyObject, RoutedEvent, Delegate>),
+                    typeof(UIElement).GetMethod("AddHandler",  BindingFlags.Static | BindingFlags.NonPublic,
+                        null, new[] { typeof(DependencyObject), typeof(RoutedEvent), typeof(Delegate) }, null)!);
+
+        private static readonly Action<DependencyObject, RoutedEvent, Delegate> RemoveHandlerStatic =
+            (Action<DependencyObject, RoutedEvent, Delegate>)Delegate.CreateDelegate(
+                typeof(Action<DependencyObject, RoutedEvent, Delegate>),
+                    typeof(UIElement).GetMethod("RemoveHandler", BindingFlags.Static | BindingFlags.NonPublic,
+                        null, new[] { typeof(DependencyObject), typeof(RoutedEvent), typeof(Delegate) }, null)!);
+
+        internal static void AddHandler(DependencyObject d, RoutedEvent routedEvent, Delegate handler) => AddHandlerStatic(d, routedEvent, handler);
+        internal static void RemoveHandler(DependencyObject d, RoutedEvent routedEvent, Delegate handler) => RemoveHandlerStatic(d, routedEvent, handler);
     }
 
     file static class ExpressionAccessor

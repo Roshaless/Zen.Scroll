@@ -69,11 +69,11 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
     {
         if (isEnabled)
         {
-            RootScrollViewer.RemoveHandlerTyped(UIElement.MouseWheelEvent, OnMouseWheel);
-            RootScrollViewer.AddHandlerTyped(UIElement.MouseWheelEvent, OnMouseWheel, false);
+            Mouse.RemoveMouseWheelHandler(RootScrollViewer, OnMouseWheel);
+            Mouse.AddMouseWheelHandler(RootScrollViewer, OnMouseWheel);
 
-            RootScrollViewer.RemoveHandlerTyped(UIElement.MouseHorizontalWheelEvent, OnMouseHorizontalWheel);
-            RootScrollViewer.AddHandlerTyped(UIElement.MouseHorizontalWheelEvent, OnMouseHorizontalWheel, false);
+            Mouse.RemovePreviewMouseHorizontalWheelHandler(RootScrollViewer, OnMouseHorizontalWheel);
+            Mouse.AddPreviewMouseHorizontalWheelHandler(RootScrollViewer, OnMouseHorizontalWheel);
 
             SetHandlesMouseWheelScrolling(RootScrollViewer, false);
             Tracker.Initialize();
@@ -82,8 +82,8 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         }
         else
         {
-            RootScrollViewer.RemoveHandlerTyped(UIElement.MouseWheelEvent, OnMouseWheel);
-            RootScrollViewer.RemoveHandlerTyped(UIElement.MouseHorizontalWheelEvent, OnMouseHorizontalWheel);
+            Mouse.RemoveMouseWheelHandler(RootScrollViewer, OnMouseWheel);
+            Mouse.RemovePreviewMouseHorizontalWheelHandler(RootScrollViewer, OnMouseHorizontalWheel);
             SetHandlesMouseWheelScrolling(RootScrollViewer, true);
 
             Tracker.Uninitialize();
