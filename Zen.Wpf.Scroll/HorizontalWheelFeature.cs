@@ -1,9 +1,33 @@
 ﻿// Author: Roshaless | Email: Roshaless@outlook.com | Created by 2026.9.19
-// 
+//
+// === MouseHorizontalWheel ===
+//
+// Adds standard routed event accessors for horizontal mouse wheel input
+// (WM_MOUSEHWHEEL), matching the pattern of the existing vertical wheel
+// events.
+//
+// Drop this file into your project and include it in the compile.
+// No registration, no initialization, no configuration. The feature
+// installs itself via [ModuleInitializer] and attaches to every Window
+// as it loads.
+//
+// Requirements:
+//
+//     <LangVersion>preview</LangVersion>
+//
+// Supported frameworks: .NET Framework 4.x through the latest .NET.
+//
 // Usage:
 //
-//     Mouse.AddMouseHorizontalWheelHandler(UIElement, OnMouseHorizontalWheel);
-//     Mouse.AddPreviewMouseHorizontalWheelHandler(UIElement, OnPreviewMouseHorizontalWheel);
+//     Mouse.AddMouseHorizontalWheelHandler(element, OnMouseHorizontalWheel);
+//     Mouse.AddPreviewMouseHorizontalWheelHandler(element, OnPreviewMouseHorizontalWheel);
+//
+//     private static void OnMouseHorizontalWheel(object sender, MouseWheelEventArgs e)
+//     {
+//         // e.Delta > 0: wheel tilted/rotated left
+//         // e.Delta < 0: wheel tilted/rotated right
+//     }
+//
 
 #pragma warning disable IDE0079
 #pragma warning disable SYSLIB1054
