@@ -62,16 +62,20 @@ namespace System.Windows
 
         private static void OnPreNotifyInput(object sender, NotifyInputEventArgs e)
         {
-            if (e.StagingItem.Input is { Handled: false, Device: MouseDevice, RoutedEvent.Name: "PreviewInputReport" } input)
+            if (e.StagingItem.Input is { Handled: false, Device: MouseDevice mouseDevice, RoutedEvent.Name: "PreviewInputReport" } input)
             {
                 var report = InputReportEventArgsStatic.GetReport(input);
                 var actions = RawMouseInputReportStatic.GetActions(report);
 
+                var inputSource = MouseDeviceStatic.GetInputSource(mouseDevice);
+                if (inputSource != null && InputReportStatic.GetInputSource(report) == inputSource)
+                {
                 if ((Convert.ToInt32(actions) & 0x20000) == 0x20000)
                 {
                     InputManangerStatic.SetMostRecentInputDevice(e.InputManager, input.Device);
                 }
             }
+        }
         }
 
         private static void OnPostProcessInput(object sender, ProcessInputEventArgs e)
