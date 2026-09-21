@@ -255,7 +255,7 @@ namespace System.Windows
 
             static MouseHorizontalWheelExtensions()
             {
-                BasePreviewMouseHorizontalWheelEvent = EventManager.RegisterRoutedEvent("PreviewMouseHorizontalWheel", RoutingStrategy.Tunnel, typeof(MouseWheelEventArgs), typeof(Mouse));
+                BasePreviewMouseHorizontalWheelEvent = EventManager.RegisterRoutedEvent("PreviewMouseHorizontalWheel", RoutingStrategy.Tunnel, typeof(MouseWheelEventHandler), typeof(Mouse));
                 BaseMouseHorizontalWheelEvent = EventManager.RegisterRoutedEvent("MouseHorizontalWheel", RoutingStrategy.Bubble, typeof(MouseWheelEventHandler), typeof(Mouse));
             }
 
