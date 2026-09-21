@@ -8,7 +8,7 @@
 //
 // Drop this file into your project and include it in the compile.
 // No registration, no initialization, no configuration. The feature
-// installs itself via [ModuleInitializer] and attaches to every Window
+// enables itself via [ModuleInitializer] and attaches to every Window
 // as it loads.
 //
 // Requirements:
