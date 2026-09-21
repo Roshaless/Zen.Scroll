@@ -227,12 +227,12 @@ namespace System.Windows
     }
 
     [EditorBrowsable(EditorBrowsableState.Never)]
-    public static class UIElementExtensions
+    public static class UIElementHorizontalWheelExtensions
     {
         private static readonly RoutedEvent UIElementPreviewMouseHorizontalWheelEvent;
         private static readonly RoutedEvent UIElementMouseWheelEvent;
 
-        static UIElementExtensions()
+        static UIElementHorizontalWheelExtensions()
         {
             UIElementPreviewMouseHorizontalWheelEvent = Mouse.PreviewMouseHorizontalWheelEvent.AddOwner(typeof(UIElement));
             UIElementMouseWheelEvent = Mouse.MouseHorizontalWheelEvent.AddOwner(typeof(UIElement));
