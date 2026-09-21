@@ -6,6 +6,7 @@
 //     Mouse.AddPreviewMouseHorizontalWheelHandler(UIElement, OnPreviewMouseHorizontalWheel);
 
 #pragma warning disable IDE0079
+#pragma warning disable SYSLIB1054
 #pragma warning disable CA2255
 
 using System.Collections.Concurrent;
@@ -223,7 +224,7 @@ namespace System.Windows
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool ScreenToClient(IntPtr hWnd, ref System.Drawing.Point lpPoint);
+        private static extern bool ScreenToClient(IntPtr hWnd, ref Drawing.Point lpPoint);
     }
 
     [EditorBrowsable(EditorBrowsableState.Never)]
@@ -394,7 +395,8 @@ namespace System.Windows
     }
     file static class SecurityCriticalDataStatic
     {
-        private static readonly Dictionary<Type, Func<object, object>> TypedGetters = [];
+#pragma warning disable IDE0001
+        private static readonly System.Collections.Generic.Dictionary<Type, Func<object, object>> TypedGetters = [];
         public static object GetValue(object instance, Type valueType)
         {
             if (TypedGetters.TryGetValue(valueType, out var getter) is not true)
@@ -404,6 +406,7 @@ namespace System.Windows
 
             return getter(instance);
         }
+#pragma warning restore IDE0001
     }
     file static class UIElementStatic
     {
@@ -411,7 +414,7 @@ namespace System.Windows
             (Action<DependencyObject, RoutedEvent, Delegate>)Delegate.CreateDelegate(
                 typeof(Action<DependencyObject, RoutedEvent, Delegate>),
                     typeof(UIElement).GetMethod("AddHandler", BindingFlags.Static | BindingFlags.NonPublic,
-                        null, new[] { typeof(DependencyObject), typeof(RoutedEvent), typeof(Delegate) }, null)!);
+                        null, [typeof(DependencyObject), typeof(RoutedEvent), typeof(Delegate)], null)!);
 
         private static readonly Action<DependencyObject, RoutedEvent, Delegate> RemoveHandlerStatic =
             (Action<DependencyObject, RoutedEvent, Delegate>)Delegate.CreateDelegate(
