@@ -201,8 +201,7 @@ namespace System.Windows
         {
             if (msg == 0x020E /*WM_MOUSEHWHEEL*/)
             {
-                // 方向似乎不对？取个反
-                var wheel = -SignedHIWORD(wParam);
+                var wheel = SignedHIWORD(wParam);
                 int x = SignedLOWORD(lParam);
                 int y = SignedHIWORD(lParam);
 
