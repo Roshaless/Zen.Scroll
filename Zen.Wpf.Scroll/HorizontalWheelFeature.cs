@@ -23,7 +23,7 @@
 //
 //     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
 //     {
-//         if (e.IsHorizontalWheel || Keyboard.Modifiers is ModifierKeys.Shift)
+//         if (e.IsHorizontalMouseWheel || Keyboard.Modifiers is ModifierKeys.Shift)
 //         {
 //             // HorizontalWheel
 //         }
@@ -279,7 +279,7 @@ namespace System.Windows
 
             extension(MouseWheelEventArgs args)
             {
-                public bool IsHorizontalWheel => args is MouseHorizontalWheelEventArgs;
+                public bool IsHorizontalMouseWheel => args is MouseHorizontalWheelEventArgs;
             }
         }
 
