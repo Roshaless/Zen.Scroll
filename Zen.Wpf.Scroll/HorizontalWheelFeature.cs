@@ -19,13 +19,18 @@
 //
 // Usage:
 //
-//     Mouse.AddMouseHorizontalWheelHandler(element, OnMouseHorizontalWheel);
-//     Mouse.AddPreviewMouseHorizontalWheelHandler(element, OnPreviewMouseHorizontalWheel);
+//     element.MouseWheel += OnMouseWheel;
 //
-//     private static void OnMouseHorizontalWheel(object sender, MouseWheelEventArgs e)
+//     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
 //     {
-//         // e.Delta > 0: wheel tilted/rotated left
-//         // e.Delta < 0: wheel tilted/rotated right
+//         if (e.IsHorizontalWheel || Keyboard.Modifiers is ModifierKeys.Shift)
+//         {
+//             // HorizontalWheel
+//         }
+//         else
+//         {
+//             // VerticalWheel
+//         }
 //     }
 //
 
@@ -38,7 +43,6 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -82,10 +86,6 @@ namespace System.Windows
     {
         public static void Initialize()
         {
-            // 确保只调用一次？
-            //InputManager.Current.PreNotifyInput -= OnPreNotifyInput;
-            //InputManager.Current.PostProcessInput -= OnPostProcessInput;
-
             InputManager.Current.PreNotifyInput += OnPreNotifyInput;
             InputManager.Current.PostProcessInput += OnPostProcessInput;
         }
@@ -111,16 +111,29 @@ namespace System.Windows
         private static void OnPostProcessInput(object sender, ProcessInputEventArgs e)
         {
             // PreviewMouseHorizontalWheel --> MouseHorizontalWheel
-            if (e.StagingItem.Input.RoutedEvent == Mouse.PreviewMouseHorizontalWheelEvent)
+            if (e.StagingItem.Input.RoutedEvent == Mouse.PreviewMouseWheelEvent)
             {
-                if (e.StagingItem.Input is { Handled: false, Device: MouseDevice mouseDevice })
+                if (e.StagingItem.Input is { Handled: false, Device: MouseDevice mouseDevice } input)
                 {
                     MouseWheelEventArgs previewWheel = (MouseWheelEventArgs)e.StagingItem.Input;
-                    MouseWheelEventArgs wheel = new(mouseDevice, previewWheel.Timestamp, previewWheel.Delta)
-                    {
-                        RoutedEvent = Mouse.MouseHorizontalWheelEvent
-                    };
+                    MouseWheelEventArgs wheel;
 
+                    if (previewWheel is MouseHorizontalWheelEventArgs)
+                    {
+                        wheel = new MouseHorizontalWheelEventArgs(mouseDevice, previewWheel.Timestamp, previewWheel.Delta)
+                        {
+                            RoutedEvent = Mouse.MouseWheelEvent
+                        };
+                    }
+                    else
+                    {
+                        wheel = new(mouseDevice, previewWheel.Timestamp, previewWheel.Delta)
+                        {
+                            RoutedEvent = Mouse.MouseWheelEvent
+                        };
+                    }
+
+                    input.Handled = true;
                     e.PushInput(wheel, e.StagingItem);
                 }
             }
@@ -135,14 +148,15 @@ namespace System.Windows
                     var inputSource = MouseDeviceStatic.GetInputSource(mouseDevice);
                     if (inputSource != null && InputReportStatic.GetInputSource(report) == inputSource)
                     {
-                        // Raw --> PreviewMouseHorizontalWheel
+                        // Raw --> PreviewMouseWheel (Horizontal)
                         if ((Convert.ToInt32(actions) & 0x20000) == 0x20000)
                         {
-                            MouseWheelEventArgs previewWheel = new(mouseDevice, InputReportStatic.GetTimestamp(report), RawMouseInputReportStatic.GetWheel(report))
+                            MouseHorizontalWheelEventArgs previewWheel = new(mouseDevice, InputReportStatic.GetTimestamp(report), RawMouseInputReportStatic.GetWheel(report))
                             {
-                                RoutedEvent = Mouse.PreviewMouseHorizontalWheelEvent
+                                RoutedEvent = Mouse.PreviewMouseWheelEvent
                             };
 
+                            input.Handled = true;
                             e.PushInput(previewWheel, e.StagingItem);
                         }
                     }
@@ -208,10 +222,16 @@ namespace System.Windows
                 var provider = HwndSourceStatic.GetMouse(Source);
                 if (provider is not null)
                 {
-                    var pt = new System.Drawing.Point() { X = x, Y = y };
+                    var pt = new Drawing.Point() { X = x, Y = y };
                     if (ScreenToClient(hwnd, ref pt))
                     {
-                        handled = HwndMouseInputProviderStatic.ReportInput(provider, hwnd, default, 0x20000, pt.X, pt.Y, wheel);
+                        handled = HwndMouseInputProviderStatic.ReportInput(provider,
+                                                                           hwnd,
+                                                                           InputMode.Foreground,
+                                                                           0x20000,
+                                                                           pt.X,
+                                                                           pt.Y,
+                                                                           wheel);
                     }
                 }
             }
@@ -250,70 +270,22 @@ namespace System.Windows
         private static extern bool ScreenToClient(IntPtr hWnd, ref Drawing.Point lpPoint);
     }
 
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public static class UIElementHorizontalWheelExtensions
-    {
-        private static readonly RoutedEvent UIElementPreviewMouseHorizontalWheelEvent;
-        private static readonly RoutedEvent UIElementMouseWheelEvent;
-
-        static UIElementHorizontalWheelExtensions()
-        {
-            UIElementPreviewMouseHorizontalWheelEvent = Mouse.PreviewMouseHorizontalWheelEvent.AddOwner(typeof(UIElement));
-            UIElementMouseWheelEvent = Mouse.MouseHorizontalWheelEvent.AddOwner(typeof(UIElement));
-        }
-
-        extension(UIElement element)
-        {
-            public static RoutedEvent PreviewMouseHorizontalWheelEvent => UIElementPreviewMouseHorizontalWheelEvent;
-            public static RoutedEvent MouseHorizontalWheelEvent => UIElementMouseWheelEvent;
-        }
-    }
 
     namespace Input
     {
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public static class MouseHorizontalWheelExtensions
+        public static class HorizontalWheelExtensions
         {
-            private static readonly RoutedEvent BasePreviewMouseHorizontalWheelEvent;
-            private static readonly RoutedEvent BaseMouseHorizontalWheelEvent;
 
-            static MouseHorizontalWheelExtensions()
+            extension(MouseWheelEventArgs args)
             {
-                BasePreviewMouseHorizontalWheelEvent = EventManager.RegisterRoutedEvent("PreviewMouseHorizontalWheel", RoutingStrategy.Tunnel, typeof(MouseWheelEventHandler), typeof(Mouse));
-                BaseMouseHorizontalWheelEvent = EventManager.RegisterRoutedEvent("MouseHorizontalWheel", RoutingStrategy.Bubble, typeof(MouseWheelEventHandler), typeof(Mouse));
-            }
-
-            extension(Mouse)
-            {
-                public static RoutedEvent PreviewMouseHorizontalWheelEvent => BasePreviewMouseHorizontalWheelEvent;
-                public static RoutedEvent MouseHorizontalWheelEvent => BaseMouseHorizontalWheelEvent;
-
-                public static void AddPreviewMouseHorizontalWheelHandler(DependencyObject element, MouseWheelEventHandler handler)
-                {
-                    UIElementStatic.AddHandler(element, BasePreviewMouseHorizontalWheelEvent, handler);
-                }
-
-                public static void RemovePreviewMouseHorizontalWheelHandler(DependencyObject element, MouseWheelEventHandler handler)
-                {
-                    UIElementStatic.RemoveHandler(element, BasePreviewMouseHorizontalWheelEvent, handler);
-                }
-
-                public static void AddMouseHorizontalWheelHandler(DependencyObject element, MouseWheelEventHandler handler)
-                {
-                    UIElementStatic.AddHandler(element, BaseMouseHorizontalWheelEvent, handler);
-                }
-
-                public static void RemoveMouseHorizontalWheelHandler(DependencyObject element, MouseWheelEventHandler handler)
-                {
-                    UIElementStatic.RemoveHandler(element, BaseMouseHorizontalWheelEvent, handler);
-                }
+                public bool IsHorizontalWheel => args is MouseHorizontalWheelEventArgs;
             }
         }
+
+        internal sealed class MouseHorizontalWheelEventArgs(MouseDevice mouse, int timestamp, int delta) : MouseWheelEventArgs(mouse, timestamp, delta);
     }
 
-    // ===================== 以下都是一坨 ==========================
-    // {为了减少反射开销以及实现快速访问， 提前将相关调用通过表达式进行编译}
-    // ===================== 以下都是一坨 ==========================
     file static class WPFAssemblies
     {
         public static readonly Assembly PresentationCoreAssembly = typeof(HwndSource).Assembly;
@@ -430,23 +402,6 @@ namespace System.Windows
             return getter(instance);
         }
 #pragma warning restore IDE0001
-    }
-    file static class UIElementStatic
-    {
-        private static readonly Action<DependencyObject, RoutedEvent, Delegate> AddHandlerStatic =
-            (Action<DependencyObject, RoutedEvent, Delegate>)Delegate.CreateDelegate(
-                typeof(Action<DependencyObject, RoutedEvent, Delegate>),
-                    typeof(UIElement).GetMethod("AddHandler", BindingFlags.Static | BindingFlags.NonPublic,
-                        null, [typeof(DependencyObject), typeof(RoutedEvent), typeof(Delegate)], null)!);
-
-        private static readonly Action<DependencyObject, RoutedEvent, Delegate> RemoveHandlerStatic =
-            (Action<DependencyObject, RoutedEvent, Delegate>)Delegate.CreateDelegate(
-                typeof(Action<DependencyObject, RoutedEvent, Delegate>),
-                    typeof(UIElement).GetMethod("RemoveHandler", BindingFlags.Static | BindingFlags.NonPublic,
-                        null, [typeof(DependencyObject), typeof(RoutedEvent), typeof(Delegate)], null)!);
-
-        internal static void AddHandler(DependencyObject d, RoutedEvent routedEvent, Delegate handler) => AddHandlerStatic(d, routedEvent, handler);
-        internal static void RemoveHandler(DependencyObject d, RoutedEvent routedEvent, Delegate handler) => RemoveHandlerStatic(d, routedEvent, handler);
     }
 
     file static class ExpressionAccessor
