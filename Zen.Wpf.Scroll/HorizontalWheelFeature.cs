@@ -40,6 +40,7 @@
 
 using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -279,7 +280,11 @@ namespace System.Windows
 
             extension(MouseWheelEventArgs args)
             {
-                public bool IsHorizontalMouseWheel => args is MouseHorizontalWheelEventArgs;
+                public bool IsHorizontalMouseWheel
+                {
+                    [DebuggerNonUserCode]
+                    get => args is MouseHorizontalWheelEventArgs;
+                }
             }
         }
 
