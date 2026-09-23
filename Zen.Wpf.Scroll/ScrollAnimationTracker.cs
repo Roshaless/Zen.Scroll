@@ -34,13 +34,13 @@ internal sealed class ScrollAnimationTracker
     private bool ScrollableDirty { get; set; }
     private bool HasPendingContentScale { get; set; }
     private bool HasPendingScrollOffset { get; set; }
-    private Vector PendingContentScale { get; set; } = UnitScale;
+    private double PendingContentScale { get; set; } = UnitScale;
     private Vector PendingScrollOffset { get; set; }
 
     public Vector ContentOffset { get; private set; }
     public Vector ContentExtent { get; private set; }
     public Vector ContentViewport { get; private set; }
-    public Vector ContentScale { get; private set; } = UnitScale;
+    public double ContentScale { get; private set; } = UnitScale;
     public Vector ContentScaleCenter { get; internal set; }
     public Vector ScrollOffset { get; private set; }
     public Vector ScrollableOffset { get; private set; }
@@ -48,27 +48,12 @@ internal sealed class ScrollAnimationTracker
 
     // Visual offset = scrollbar value − contentOffset·scale; always matches what is on screen.
     public Vector AnimatedOffset => new(
-        ScrollOffset.X - ContentOffset.X * ContentScale.X,
-        ScrollOffset.Y - ContentOffset.Y * ContentScale.Y);
+        ScrollOffset.X - ContentOffset.X * ContentScale,
+        ScrollOffset.Y - ContentOffset.Y * ContentScale);
 
     public Vector ViewportSize => new
         (ScrollContentPresenter?.ViewportWidth ?? 0,
         ScrollContentPresenter?.ViewportHeight ?? 0);
-
-    // An axis is scrollable when the scrollbar allows it, or when zooming has produced overflow anyway.
-    public bool CanHorizontalScroll =>
-        (RootScrollViewer.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled
-         && RootScrollViewer.ScrollableWidth > 0) || IsScaledX(ContentScale);
-
-    public bool CanVerticallyScroll =>
-        (RootScrollViewer.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled
-         && RootScrollViewer.ScrollableHeight > 0) || IsScaledY(ContentScale);
-
-    // Structural capability, unrelated to whether the content overflows:
-    // zooming into a smaller-than-viewport content is what creates the scrollable area in the first place.
-    public bool CanZoom => !IsZoomDisabled
-        && (RootScrollViewer.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled
-            || RootScrollViewer.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled);
 
     public bool IsAnimating => Client.IsActive;
 
@@ -87,6 +72,54 @@ internal sealed class ScrollAnimationTracker
 
         ContentTransform = new MatrixTransform();
         ScrollBarTakeover = new ScrollBarTakeover(scrollViewer, this);
+    }
+
+    public bool CanHorizontalScroll(double delta)
+    {
+        if (RootScrollViewer.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled)
+        {
+            var offsetX = AnimatedOffset.X;
+            var scrollableWidth = ScrollableOffset.X;
+
+            var epsilon = ScrollEpsilon > Math.Abs(delta) ? ScaleEpsilon : ScrollEpsilon;
+            if ((delta > 0d && offsetX > 0d && !offsetX.AreClose(0d, epsilon)) ||
+                (delta < 0d && offsetX < scrollableWidth && !offsetX.AreClose(scrollableWidth, epsilon)))
+            {
+                return true;
+            }
+        }
+
+        return IsScaled(ContentScale);
+    }
+
+    public bool CanVerticalScroll(double delta)
+    {
+        if (RootScrollViewer.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled)
+        {
+            var offsetY = AnimatedOffset.Y;
+            var scrollableHeight = ScrollableOffset.Y;
+
+            var epsilon = ScrollEpsilon > Math.Abs(delta) ? ScaleEpsilon : ScrollEpsilon;
+            if ((delta > 0d && offsetY > 0d && !offsetY.AreClose(0d, epsilon)) ||
+                (delta < 0d && offsetY < scrollableHeight && !offsetY.AreClose(scrollableHeight, epsilon)))
+            {
+                return true;
+            }
+        }
+
+        return IsScaled(ContentScale);
+    }
+
+    public bool CanZoom(double delta)
+    {
+        if (IsZoomDisabled) return false;
+
+        if (RootScrollViewer.HorizontalScrollBarVisibility == default || RootScrollViewer.VerticalScrollBarVisibility == default)
+        {
+            return delta > 0 ? ContentScale.LessThan(Client.MaximumScale) : ContentScale.GreaterThan(Client.MinimumScale);
+        }
+
+        return false;
     }
 
     public void Initialize()
@@ -255,15 +288,15 @@ internal sealed class ScrollAnimationTracker
         if (HasScaleChanged is not true) return;
 
         HasScaleChanged = false;
-        ContentCache.SetScale(RootScrollViewer, Math.Max(ContentScale.X, ContentScale.Y));
+        ContentCache.SetScale(RootScrollViewer, ContentScale);
     }
 
-    public void SetContentScale(Vector scale)
+    public void SetContentScale(double scale)
     {
         if (IsInitialized is not true) return;
 
-        scale = scale.ValidOr(ContentScale)
-            .ConstrainedBetween(Client.MinimumScale, Client.MaximumScale);
+        scale = scale.IsValidSize() ? scale : ContentScale;
+        scale = Math.Clamp(scale, Client.MinimumScale, Client.MaximumScale);
 
         // Only record the pending scale: folding the anchor offset into PendingScrollOffset here
         // would clobber the frame's scroll target.
@@ -291,23 +324,23 @@ internal sealed class ScrollAnimationTracker
             // point under the cursor is p* = (center + scrollOffset)/scale − contentOffset; scaling the
             // reciprocal-difference at that point keeps p* fixed before and after the zoom.
             var contentOffset = new Vector(
-                ContentOffset.X + (ContentScaleCenter.X + ScrollOffset.X) * (1d / newScale.X - 1d / scale.X),
-                ContentOffset.Y + (ContentScaleCenter.Y + ScrollOffset.Y) * (1d / newScale.Y - 1d / scale.Y));
+                ContentOffset.X + (ContentScaleCenter.X + ScrollOffset.X) * (1d / newScale - 1d / scale),
+                ContentOffset.Y + (ContentScaleCenter.Y + ScrollOffset.Y) * (1d / newScale - 1d / scale));
 
             if (HasPendingScrollOffset)
             {
                 // Fold this frame's scroll into the same content-offset delta:
                 // ΔcontentOffset = (current visual − target visual) / newScale; an axis without distance stays 0.
                 contentOffset += new Vector(
-                    (AnimatedOffset.X - PendingScrollOffset.X) / newScale.X,
-                    (AnimatedOffset.Y - PendingScrollOffset.Y) / newScale.Y);
+                    (AnimatedOffset.X - PendingScrollOffset.X) / newScale,
+                    (AnimatedOffset.Y - PendingScrollOffset.Y) / newScale);
             }
 
             // Recompute the frame's visible target from the current ScrollOffset so the ContentOffset that
             // ApplyOffsetChanged rebuilds matches this frame's target (not the previous frame's).
             PendingScrollOffset = new Vector(
-                ScrollOffset.X - contentOffset.X * newScale.X,
-                ScrollOffset.Y - contentOffset.Y * newScale.Y);
+                ScrollOffset.X - contentOffset.X * newScale,
+                ScrollOffset.Y - contentOffset.Y * newScale);
             HasPendingScrollOffset = true;
 
             ContentScale = newScale;
@@ -318,7 +351,7 @@ internal sealed class ScrollAnimationTracker
         if (ScrollableDirty)
         {
             UpdateScrollableRange();
-            if (ScrollOffset.X > ScrollableOffset.X || ScrollOffset.Y > ScrollableOffset.Y)
+            if (ScrollOffset.X.GreaterThan(ScrollableOffset.X) || ScrollOffset.Y.GreaterThan(ScrollableOffset.Y))
             {
                 LogicalScroll(new Vector(
                     Math.Min(ScrollOffset.X, ScrollableOffset.X),
@@ -347,11 +380,11 @@ internal sealed class ScrollAnimationTracker
 
         var scale = ContentScale;
         ContentOffset = new Vector(
-            -offsetChanged.X / Math.Max(scale.X, MinDivisor.X),
-            -offsetChanged.Y / Math.Max(scale.Y, MinDivisor.Y));
+            -offsetChanged.X / Math.Max(scale, MinDivisor.X),
+            -offsetChanged.Y / Math.Max(scale, MinDivisor.Y));
         ContentTransform.Matrix = new Matrix(
-            scale.X, 0, 0, scale.Y,
-            ContentOffset.X * scale.X, ContentOffset.Y * scale.Y);
+            scale, 0, 0, scale,
+            ContentOffset.X * scale, ContentOffset.Y * scale);
 
         ScrollBarTakeover.SetValue(ScrollOffset.X + offsetChanged.X, ScrollOffset.Y + offsetChanged.Y);
     }
@@ -415,11 +448,11 @@ internal sealed class ScrollAnimationTracker
 
         var scale = ContentScale;
         ScrollableOffset = new Vector(
-            Math.Max(0, ContentExtent.X * scale.X - ContentViewport.X),
-            Math.Max(0, ContentExtent.Y * scale.Y - ContentViewport.Y));
+            Math.Max(0, ContentExtent.X * scale - ContentViewport.X),
+            Math.Max(0, ContentExtent.Y * scale - ContentViewport.Y));
 
         ScrollBarTakeover.SetMaximum(ScrollableOffset);
-        ScrollBarTakeover.Sync(IsScaledX(scale) && IsScaledY(scale));
+        ScrollBarTakeover.Sync(IsScaled(scale));
     }
 
     private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
@@ -488,12 +521,11 @@ internal sealed class ScrollAnimationTracker
         }
     }
 
-    // Treating (1 + epsilon) as "not zoomed" avoids churn from floating-point noise.
     private const double ScaleEpsilon = 1e-3;
+    private const double ScrollEpsilon = 1.6e1;
     // The unscaled identity, not the configured lower bound: content starts at 1x no matter how far
     // out the caller allows zooming.
-    private static readonly Vector UnitScale = new(1, 1);
+    private static readonly double UnitScale = 1.0d;
     private static readonly Vector MinDivisor = new(0.01, 0.01);
-    private static bool IsScaledX(Vector scale) => scale.X - 1d > ScaleEpsilon;
-    private static bool IsScaledY(Vector scale) => scale.Y - 1d > ScaleEpsilon;
+    private static bool IsScaled(double scale) => scale - 1d > ScaleEpsilon;
 }

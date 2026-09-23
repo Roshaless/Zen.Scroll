@@ -8,8 +8,8 @@ namespace Zen.Scroll;
 public sealed class ScrollAnimationController : ScrollAnimationClient
 {
     private readonly ScrollAnimationTracker Tracker;
-    private Vector MinimumScaleValue;
-    private Vector MaximumScaleValue;
+    private double MinimumScaleValue;
+    private double MaximumScaleValue;
     private double ScrollDeltaValue;
     private double ScrollDurationValue;
     private double ZoomDeltaValue;
@@ -20,7 +20,7 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
 
     public override Vector CurrentOffset => Tracker.AnimatedOffset;
 
-    public override Vector CurrentScale => Tracker.ContentScale;
+    public override double CurrentScale => Tracker.ContentScale;
 
     public override double ScrollDelta => ScrollDeltaValue;
 
@@ -28,11 +28,11 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
 
     public override double ZoomDelta => ZoomDeltaValue;
 
-    public override Vector MinimumScale => MinimumScaleValue;
+    public override double MinimumScale => MinimumScaleValue;
 
-    public override Vector MaximumScale => MaximumScaleValue;
+    public override double MaximumScale => MaximumScaleValue;
 
-    public ScrollAnimation? ZoomAnimation
+    public ZoomAnimation? ZoomAnimation
     {
         get; set => field = SwapAnimation(field, value);
     }
@@ -53,7 +53,7 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         VirtualizingPanel.SetVirtualizationMode(scrollViewer, VirtualizationMode.Recycling);
     }
 
-    private ScrollAnimation? SwapAnimation(ScrollAnimation? oldValue, ScrollAnimation? newValue)
+    private T? SwapAnimation<T>(T? oldValue, T? newValue) where T : MotionAnimation
     {
         if (oldValue is not null)
         {
@@ -69,12 +69,8 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
     {
         if (isEnabled)
         {
-            Mouse.RemoveMouseWheelHandler(RootScrollViewer, OnMouseWheel);
-            Mouse.AddMouseWheelHandler(RootScrollViewer, OnMouseWheel);
-
-            Mouse.RemovePreviewMouseHorizontalWheelHandler(RootScrollViewer, OnMouseHorizontalWheel);
-            Mouse.AddPreviewMouseHorizontalWheelHandler(RootScrollViewer, OnMouseHorizontalWheel);
-
+            RootScrollViewer.MouseWheel -= OnMouseWheel;
+            RootScrollViewer.MouseWheel += OnMouseWheel;
             SetHandlesMouseWheelScrolling(RootScrollViewer, false);
             Tracker.Initialize();
 
@@ -82,10 +78,8 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         }
         else
         {
-            Mouse.RemoveMouseWheelHandler(RootScrollViewer, OnMouseWheel);
-            Mouse.RemovePreviewMouseHorizontalWheelHandler(RootScrollViewer, OnMouseHorizontalWheel);
+            RootScrollViewer.MouseWheel -= OnMouseWheel;
             SetHandlesMouseWheelScrolling(RootScrollViewer, true);
-
             Tracker.Uninitialize();
         }
     }
@@ -117,58 +111,56 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         Tracker.FlushFrame();
     }
 
+    public override void UpdateScaleTarget(double scale) => Tracker.SetContentScale(scale);
+
     public override void UpdateScrollDelta(Vector delta) => Tracker.ApplyScrollDelta(delta);
-
-    public override void UpdateScaleTarget(Vector scale) => Tracker.SetContentScale(scale);
-
-    private void OnMouseHorizontalWheel(object? sender, MouseWheelEventArgs e)
-    {
-        if (e.Handled || Tracker.IsInitialized is not true)
-            return;
-
-        if (Tracker.CanHorizontalScroll)
-        {
-            e.Handled = true;
-            ScrollAnimation?.ScrollBy(new Vector(IsMouseWheelDeltaForOneLine(e.Delta) ?
-                e.Delta / Mouse.MouseWheelDeltaForOneLine * ScrollDelta : e.Delta, 0d));
-            return;
-        }
-    }
 
     private void OnMouseWheel(object? sender, MouseWheelEventArgs e)
     {
-        if (e.Handled || Tracker.IsInitialized is not true)
-            return;
-
-        if (Keyboard.Modifiers is ModifierKeys.Control && Tracker.IsRootScrollViewer && Tracker.CanZoom)
+        if (e.Handled || Tracker.IsInitialized is not true) return;
+        if (Keyboard.Modifiers is ModifierKeys.Control)
         {
-            e.Handled = true;
-            Tracker.ContentScaleCenter = e.GetPosition(RootScrollViewer).ToVector();
-            // One notch is ZoomDelta; normalizing by the notch unit keeps multi-notch and
-            // high-resolution wheel deltas proportional.
-            var zoomDelta = e.Delta / Mouse.MouseWheelDeltaForOneLine * ZoomDelta;
-            ZoomAnimation?.ScrollBy(new Vector(zoomDelta, zoomDelta));
-            ScrollAnimation?.Stop();
-            return;
+            if (Tracker.IsRootScrollViewer)
+            {
+                var zoomDelta = e.Delta / Mouse.MouseWheelDeltaForOneLine * ZoomDelta;
+                if (Tracker.CanZoom(zoomDelta))
+                {
+                    e.Handled = true;
+                    Tracker.ContentScaleCenter = e.GetPosition(RootScrollViewer).ToVector();
+                    ZoomAnimation?.ZoomBy(zoomDelta);
+                    ScrollAnimation?.Stop();
+                }
+            }
         }
-
-        if (Keyboard.Modifiers is ModifierKeys.Shift && Tracker.CanHorizontalScroll)
+        else
         {
-            e.Handled = true;
-            ScrollAnimation?.ScrollBy(new Vector(IsMouseWheelDeltaForOneLine(e.Delta) ?
-                e.Delta / Mouse.MouseWheelDeltaForOneLine * ScrollDelta : e.Delta, 0d));
-            return;
-        }
+            var delta = NormalizeWheelDelta(e.Delta);
+            if (Keyboard.Modifiers is ModifierKeys.Shift || e.IsHorizontalMouseWheel)
+            {
+                delta = e.IsHorizontalMouseWheel ? -delta : delta;
+                if (Tracker.CanHorizontalScroll(delta))
+                {
+                    e.Handled = true;
+                    ScrollAnimation?.ScrollBy(new Vector(delta, 0d));
+                }
 
-        if (Tracker.CanVerticallyScroll)
-        {
-            e.Handled = true;
-            ScrollAnimation?.ScrollBy(new Vector(0d, IsMouseWheelDeltaForOneLine(e.Delta) ?
-                e.Delta / Mouse.MouseWheelDeltaForOneLine * ScrollDelta : e.Delta));
+                return;
+            }
+
+            if (Tracker.CanVerticalScroll(delta))
+            {
+                e.Handled = true;
+                ScrollAnimation?.ScrollBy(new Vector(0d, delta));
+            }
         }
     }
 
-    private static bool IsMouseWheelDeltaForOneLine(double delta)
+    private double NormalizeWheelDelta(int delta)
+    {
+        return IsMouseWheelDeltaForOneLine(delta) ? delta / Mouse.MouseWheelDeltaForOneLine * ScrollDelta : delta;
+    }
+
+    private static bool IsMouseWheelDeltaForOneLine(int delta)
     {
         return delta % Mouse.MouseWheelDeltaForOneLine == 0;
     }

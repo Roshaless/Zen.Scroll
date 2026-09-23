@@ -31,15 +31,15 @@ internal static class ExtensionMethods
         public Vector ConstrainedBetween(Vector min, Vector max)
         {
             return new(
-                Math.Max(min.X, Math.Min(max.X, vector.X)),
-                Math.Max(min.Y, Math.Min(max.Y, vector.Y)));
+                vector.X.LessThanOrClose(min.X) ? min.X : vector.X.GreaterThanOrClose(max.X) ? max.X : vector.X,
+                vector.Y.LessThanOrClose(min.Y) ? min.Y : vector.Y.GreaterThanOrClose(max.Y) ? max.Y : vector.Y);
         }
 
-        // Keeps NaN / Infinity out of dependency properties.
         public Vector ValidOr(Vector fallback)
         {
-            static bool IsValidValue(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
-            return new(IsValidValue(vector.X) ? vector.X : fallback.X, IsValidValue(vector.Y) ? vector.Y : fallback.Y);
+            return new(
+                vector.X.IsValidSize() ? vector.X : fallback.X,
+                vector.Y.IsValidSize() ? vector.Y : fallback.Y);
         }
 
         public Vector WithX(double x)
@@ -53,9 +53,59 @@ internal static class ExtensionMethods
         }
     }
 
-    extension(Point self)
+    extension(Point point)
     {
-        public Vector ToVector() => new(self.X, self.Y);
+        public Vector ToVector() => new(point.X, point.Y);
+    }
+
+    extension(double value1)
+    {
+        public bool AreClose(double value2)
+        {
+            const double Epsilon = 0.00000153;
+            return value1.AreClose(value2, Epsilon);
+    }
+
+        public bool AreClose(double value2, double epsilon)
+        {
+            if (value1 == value2)
+            {
+                return true;
+            }
+
+            double delta = value1 - value2;
+            return (delta < epsilon) && (delta > -epsilon);
+        }
+
+        public bool LessThan(double value2)
+        {
+            return (value1 < value2) && !value1.AreClose(value2);
+        }
+
+        public bool GreaterThan(double value2)
+        {
+            return (value1 > value2) && !value1.AreClose(value2);
+        }
+
+        public bool LessThanOrClose(double value2)
+        {
+            return (value1 < value2) || value1.AreClose(value2);
+        }
+
+        public bool GreaterThanOrClose(double value2)
+        {
+            return (value1 > value2) || value1.AreClose(value2);
+        }
+
+        public bool IsFinite()
+        {
+            return !double.IsNaN(value1) && !double.IsInfinity(value1);
+        }
+
+        public bool IsValidSize()
+    {
+            return value1.IsFinite() && value1.GreaterThanOrClose(0);
+        }
     }
 
 #if !NET8_0_OR_GREATER
@@ -82,16 +132,16 @@ internal static class ExtensionMethods
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double Clamp(double value, double min, double max)
         {
-            if (min > max)
+            if (min.GreaterThan(max))
             {
                 throw new ArgumentException($"'{min}' cannot be greater than {max}.");
             }
 
-            if (value < min)
+            if (value.LessThanOrClose(min))
             {
                 return min;
             }
-            else if (value > max)
+            else if (value.GreaterThanOrClose(max))
             {
                 return max;
             }

@@ -1,26 +1,10 @@
-﻿using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 
 namespace Zen.Scroll;
 
-public abstract class ScrollAnimation
+public abstract class ScrollAnimation : MotionAnimation
 {
-    // Exponential decay never truly reaches zero; use this as the common stop condition.
-    protected const double MaxAnimationSeconds = 1d;
-
-    protected const double MillisecondsPerSecond = 1000d;
-
-    internal ScrollAnimationClient? InternalScrollClient;
-
-    protected ScrollAnimationClient ScrollClient => InternalScrollClient ?? throw new InvalidOperationException("ScrollClient is not set.");
-
-    public bool IsActive { get; private set; }
-
-    public long StartTimestamp { get; private set; }
-
     public abstract void ScrollBy(Vector delta);
 
     public abstract void ScrollBy(Vector delta, double duration);
@@ -29,43 +13,6 @@ public abstract class ScrollAnimation
     public abstract void ScrollTo(Vector from, Vector to);
 
     public abstract void ScrollTo(Vector from, Vector to, double duration);
-
-    [MemberNotNullWhen(true, nameof(InternalScrollClient))]
-    public bool CheckAccess() => InternalScrollClient is not null;
-
-    public void Start()
-    {
-        if (CheckAccess())
-        {
-            IsActive = true;
-            StartTimestamp = Stopwatch.GetTimestamp();
-            ScrollClient.Start(this);
-            OnStart();
-        }
-    }
-
-    public void Stop()
-    {
-        if (IsActive is not true)
-            return;
-
-        if (CheckAccess())
-        {
-            IsActive = false;
-            ScrollClient.Stop(this);
-            OnStop();
-        }
-    }
-
-    protected virtual void OnStart() { }
-
-    protected virtual void OnStop() { }
-
-    // Returns false when the animation has finished; the caller is responsible for Stop().
-    public abstract bool ServiceAnimation(TimeSpan elapsedTime);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public TimeSpan TimeSinceStart() => Stopwatch.GetElapsedTime(StartTimestamp);
 
     public static readonly DependencyProperty IsEnabledProperty =
         DependencyProperty.RegisterAttached("IsEnabled", typeof(bool),
@@ -119,12 +66,12 @@ public abstract class ScrollAnimation
             typeof(ScrollAnimation), TuningMetadata(70d, CoerceScrollDuration));
 
     public static readonly DependencyProperty MinimumScaleProperty =
-        DependencyProperty.RegisterAttached("MinimumScale", typeof(Vector),
-            typeof(ScrollAnimation), TuningMetadata(new Vector(1, 1), CoerceMinimumScale));
+        DependencyProperty.RegisterAttached("MinimumScale", typeof(double),
+            typeof(ScrollAnimation), TuningMetadata(1.0d, CoerceMinimumScale));
 
     public static readonly DependencyProperty MaximumScaleProperty =
-        DependencyProperty.RegisterAttached("MaximumScale", typeof(Vector),
-            typeof(ScrollAnimation), TuningMetadata(new Vector(10, 10), CoerceMaximumScale));
+        DependencyProperty.RegisterAttached("MaximumScale", typeof(double),
+            typeof(ScrollAnimation), TuningMetadata(10.0d, CoerceMaximumScale));
 
     public static readonly DependencyProperty ZoomDeltaProperty =
         DependencyProperty.RegisterAttached("ZoomDelta", typeof(double),
@@ -142,16 +89,16 @@ public abstract class ScrollAnimation
     public static void SetScrollDuration(ScrollViewer scrollViewer, double value) =>
         scrollViewer.SetValue(ScrollDurationProperty, value);
 
-    public static Vector GetMinimumScale(ScrollViewer scrollViewer) =>
-        (Vector)scrollViewer.GetValue(MinimumScaleProperty);
+    public static double GetMinimumScale(ScrollViewer scrollViewer) =>
+        (double)scrollViewer.GetValue(MinimumScaleProperty);
 
-    public static void SetMinimumScale(ScrollViewer scrollViewer, Vector value) =>
+    public static void SetMinimumScale(ScrollViewer scrollViewer, double value) =>
         scrollViewer.SetValue(MinimumScaleProperty, value);
 
-    public static Vector GetMaximumScale(ScrollViewer scrollViewer) =>
-        (Vector)scrollViewer.GetValue(MaximumScaleProperty);
+    public static double GetMaximumScale(ScrollViewer scrollViewer) =>
+        (double)scrollViewer.GetValue(MaximumScaleProperty);
 
-    public static void SetMaximumScale(ScrollViewer scrollViewer, Vector value) =>
+    public static void SetMaximumScale(ScrollViewer scrollViewer, double value) =>
         scrollViewer.SetValue(MaximumScaleProperty, value);
 
     public static double GetZoomDelta(ScrollViewer scrollViewer) =>
@@ -207,11 +154,9 @@ public abstract class ScrollAnimation
     // the ceiling is the same 20 the upper bound uses, since nothing above it could ever be reached.
     private static object CoerceMinimumScale(DependencyObject d, object baseValue)
     {
-        var scale = (Vector)baseValue;
+        var scale = (double)baseValue;
 
-        return new Vector(
-            Math.Clamp(Math.Abs(scale.X), 1d, 20d),
-            Math.Clamp(Math.Abs(scale.Y), 1d, 20d));
+        return Math.Clamp(Math.Abs(scale), 1d, 20d);
     }
 
     // 20x is where zooming stops being useful and starts to feel like a microscope. The upper bound
@@ -219,11 +164,9 @@ public abstract class ScrollAnimation
     // upper one drags it along (see OnTuningChanged).
     private static object CoerceMaximumScale(DependencyObject d, object baseValue)
     {
-        var scale = (Vector)baseValue;
-        var minimum = (Vector)d.GetValue(MinimumScaleProperty);
+        var scale = (double)baseValue;
+        var minimum = (double)d.GetValue(MinimumScaleProperty);
 
-        return new Vector(
-            Math.Clamp(Math.Abs(scale.X), Math.Min(minimum.X, 20d), 20d),
-            Math.Clamp(Math.Abs(scale.Y), Math.Min(minimum.Y, 20d), 20d));
+        return Math.Clamp(Math.Abs(scale), Math.Min(minimum, 20d), 20d);
     }
 }

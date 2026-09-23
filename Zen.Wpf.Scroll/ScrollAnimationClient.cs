@@ -8,7 +8,7 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
 {
     protected ScrollViewer RootScrollViewer { get; } = scrollViewer;
 
-    private readonly List<ScrollAnimation> ActiveAnimations = [];
+    private readonly List<MotionAnimation> ActiveAnimations = [];
 
     public abstract Vector MinimumScrollOffset { get; }
 
@@ -16,11 +16,11 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
 
     public abstract Vector CurrentOffset { get; }
 
-    public abstract Vector CurrentScale { get; }
+    public abstract double CurrentScale { get; }
 
-    public abstract Vector MinimumScale { get; }
+    public abstract double MinimumScale { get; }
 
-    public abstract Vector MaximumScale { get; }
+    public abstract double MaximumScale { get; }
 
     public abstract double ScrollDelta { get; }
 
@@ -30,7 +30,7 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
 
     public bool IsActive { get; private set; }
 
-    public abstract void UpdateScaleTarget(Vector scale);
+    public abstract void UpdateScaleTarget(double scale);
 
     public abstract void UpdateScrollDelta(Vector delta);
 
@@ -44,7 +44,7 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
         CompositionTarget.Rendering -= OnRendering;
     }
 
-    public void Start(ScrollAnimation animation)
+    public void Start(MotionAnimation animation)
     {
         if (ActiveAnimations.Contains(animation) is not true)
         {
@@ -58,7 +58,7 @@ public abstract class ScrollAnimationClient(ScrollViewer scrollViewer)
         }
     }
 
-    public void Stop(ScrollAnimation animation)
+    public void Stop(MotionAnimation animation)
     {
         if (ActiveAnimations.Remove(animation) is not true)
             return;
