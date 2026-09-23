@@ -90,6 +90,19 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         MinimumScaleValue = ScrollAnimation.GetMinimumScale(RootScrollViewer);
         MaximumScaleValue = ScrollAnimation.GetMaximumScale(RootScrollViewer);
         ZoomDeltaValue = ScrollAnimation.GetZoomDelta(RootScrollViewer);
+
+        if (CurrentScale < MinimumScaleValue)
+        {
+            ZoomAnimation?.Stop();
+            ScrollAnimation?.Stop();
+            Tracker.SetContentScale(MinimumScaleValue);
+        }
+        else if (CurrentScale > MaximumScaleValue)
+        {
+            ZoomAnimation?.Stop();
+            ScrollAnimation?.Stop();
+            Tracker.SetContentScale(MaximumScaleValue);
+        }
     }
 
     protected override void OnStart()
