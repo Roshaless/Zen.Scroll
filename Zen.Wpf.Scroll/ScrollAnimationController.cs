@@ -1,5 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 
@@ -165,14 +164,9 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         return delta % Mouse.MouseWheelDeltaForOneLine == 0;
     }
 
-#if NET8_0_OR_GREATER
-    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "set_HandlesMouseWheelScrolling")]
-    private static extern void SetHandlesMouseWheelScrolling(ScrollViewer scrollViewer, bool value);
-#else
+    private static readonly Action<ScrollViewer, bool> HandlesMouseWheelScrollingSetter =
+        ExpressionAccessor.BuildSetter<ScrollViewer, bool>("HandlesMouseWheelScrolling");
+
     private static void SetHandlesMouseWheelScrolling(ScrollViewer scrollViewer, bool value)
-    {
-        var internalFlag = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
-        typeof(ScrollViewer).GetMethod("set_HandlesMouseWheelScrolling", internalFlag).Invoke(scrollViewer, [value]);
-    }
-#endif
+        => HandlesMouseWheelScrollingSetter(scrollViewer, value);
 }
