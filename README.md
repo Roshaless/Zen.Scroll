@@ -3,7 +3,7 @@
 [![NuGet Version](https://img.shields.io/nuget/v/Zen.Wpf.Scroll)](https://www.nuget.org/packages/Zen.Wpf.Scroll)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/Zen.Wpf.Scroll)](https://www.nuget.org/packages/Zen.Wpf.Scroll)
 
-**Zen.Scroll** 是一个 WPF 滚动动画库，为 `ScrollViewer` 及其内部包含 `ScrollViewer` 的控件（`ListView`、`DataGrid`、`GridView` 等）提供滚轮、触控板与缩放的过渡动画。启用方式为在 `ScrollViewer` 上设置 `ScrollAnimation.IsEnabled` 附加属性，不涉及模板与布局的修改。
+**Zen.Scroll** 是一个 WPF 滚动动画库，为 `ScrollViewer` 及其内部包含 `ScrollViewer` 的控件（`ListView`、`DataGrid`、`GridView` 等）提供滚轮（含水平滚轮）、触控板与缩放的过渡动画。启用方式为在 `ScrollViewer` 上设置 `ScrollAnimation.IsEnabled` 附加属性，不涉及模板与布局的修改。
 
 ## ✨ 功能特性
 
@@ -49,7 +49,7 @@ dotnet add package Zen.Wpf.Scroll
 
 ### 2. 全局启用（所有 `ScrollViewer`）
 ``` xml
- <!-- App.xaml -->
+<!-- App.xaml -->
 <Application.Resources>
     <ResourceDictionary.MergedDictionaries>
         <!-- 通过字典合并的方式，确保其能够正确的覆盖默认样式并应用 -->
@@ -57,7 +57,7 @@ dotnet add package Zen.Wpf.Scroll
     </ResourceDictionary.MergedDictionaries>
 </Application.Resources>
 
- <!-- TemplateStyles.xaml -->
+<!-- TemplateStyles.xaml -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Style BasedOn="{StaticResource {x:Type ScrollViewer}}" TargetType="ScrollViewer">
         <Setter Property="ScrollAnimation.IsEnabled" Value="true" />
@@ -88,19 +88,19 @@ bool enabled = ScrollAnimation.GetIsEnabled(myScrollViewer);
     <Setter Property="ScrollAnimation.IsEnabled" Value="True" />
     <Setter Property="ScrollAnimation.ScrollDelta" Value="100" />
     <Setter Property="ScrollAnimation.ScrollDuration" Value="80" />
-    <Setter Property="ScrollAnimation.MinimumScale" Value="1,1" />
-    <Setter Property="ScrollAnimation.MaximumScale" Value="10,10" />
+    <Setter Property="ScrollAnimation.MinimumScale" Value="1" />
+    <Setter Property="ScrollAnimation.MaximumScale" Value="10" />
     <Setter Property="ScrollAnimation.ZoomDelta" Value="0.2" />
 </Style>
 ```
 
 | 附加属性 | 说明 |
-| ---- | ---- | ---- |
-| `ScrollDelta` | 每格滚轮的滚动量（像素），负数表示反向滚动 |
-| `ScrollDuration` | 滚轮滚动曲线的时间常数（毫秒） |
-| `MinimumScale` | 缩放下限 |
-| `MaximumScale` | 缩放上限 |
-| `ZoomDelta` | `Ctrl` + 滚轮每格的缩放量，负数表示反向缩放 |
+| ---- | ---- |
+| `ScrollDelta` | 每格滚轮的滚动量（像素），负数反向；绝对值下限 48 |
+| `ScrollDuration` | 滚轮滚动的动画时长（毫秒），限制在 30~1000 |
+| `MinimumScale` | 缩放下限，限制在 1~20 |
+| `MaximumScale` | 缩放上限，限制在 `MinimumScale`~20 |
+| `ZoomDelta` | `Ctrl` + 滚轮每格的缩放量，负数反向 |
 
 > 超出范围的值会被就近修正，参数变更立即生效。
 
@@ -112,24 +112,25 @@ bool enabled = ScrollAnimation.GetIsEnabled(myScrollViewer);
 
 | 组件 | 职责 |
 | ---- | ---- |
-| `ScrollAnimation`（`Smooth` / `ZoomAnimationSmooth`） | 计算本帧的滚动/缩放增量，只提交目标，不触碰视觉元素 |
-| `ScrollAnimationClient` | 动画只读的宿主契约：滚动/缩放状态与可调参数 |
-| `ScrollAnimationController` | 输入拦截、动画生命周期、布局的暂停与恢复、可调参数的缓存与下发 |
+| `ScrollAnimation` / `ZoomAnimation` | 滚动 / 缩放的抽象入口 |
+| `ScrollAnimationSmooth` / `ZoomAnimationSmooth` | 默认实现：滚轮走指数衰减，触控板按手势速度改曲线，缩放以鼠标位置为中心 |
+| `ScrollAnimationClient` | 动画宿主抽象：定义逐帧驱动方法与只读的滚动/缩放状态 |
+| `ScrollAnimationController` | 输入拦截（滚轮 / 水平滚轮 / `Ctrl` 缩放 / `Shift` 横向）、动画生命周期与输入节流、可调参数缓存 |
 | `ScrollAnimationTracker` | 跟踪滚动/缩放状态，合成内容变换与滚动条更新（含可视量 ⇄ 内容量的纯计算） |
-| `ContentCache` / `ScrollBarCommandHandler` | 位图缓存管理 / 滚动条命令接管 |
+| `ScrollBarCommandHandler` | 接管滚动条命令：拖动与翻页走内容变换路径，动画期间丢弃显式跳转 |
 
 ### 调用链：
 
 ```mermaid
 graph TD
-    A[用户滚轮 / 触控板输入] --> B{Controller 拦截输入}
-    B --> G[动画开始：暂停内容布局]
-    G --> C[ScrollAnimation 计算本帧增量]
+    A[滚轮 / 水平滚轮 / 触控板 / Ctrl 缩放输入] --> B{Controller 拦截输入}
+    B --> G[动画开始：节流鼠标移动]
+    G --> C[滚动 / 缩放动画计算本帧增量]
     C --> D[Client 提交待应用目标]
     C --> E[等待每帧 FlushFrame 合成]
-    D --> F[ MatrixTransform 内容变换 （GPU 合成） ]
+    D --> F[ MatrixTransform 内容变换（GPU 合成）与滚动条 ]
     E --> F
-    F --> H[动画结束：恢复布局并折算内容偏移]
+    F --> H[动画结束：折算内容偏移]
 
 ```
 
@@ -137,11 +138,11 @@ graph TD
 |  优化点   | 实现方式  |
 |  ----  | ----  |
 | 视觉层驱动  | 基于内容坐标变换，完全 GPU 加速，依赖 WPF 渲染管线 |
-| 布局暂停  | 动画期间暂停内容子树的布局更新，结束时恢复并折算偏移，逐帧的失效请求不再各自触发布局 |
-| 双变换同步 | 元素位置与滚动偏移交替变换，实现视觉与逻辑状态双同步 |
+| 鼠标输入节流 | 动画期间鼠标移动输入按固定间隔节流（默认 40ms），滚轮与按键不受影响 |
+| 双变换同步 | 动画期间由内容变换承载位移，停止时折算回真实滚动位置 |
 | 参数读取 | 可调参数在附加属性变更时推送到控制器缓存，动画与逐帧逻辑只读字段 |
 
-> 动画期间内容子树的布局请求会被推迟到动画结束统一处理，因此滚动过程中的元素尺寸变化不会立即生效。
+> 动画期间的鼠标移动节流间隔可通过 `MouseMoveThrottler.IntervalMs` 调整，默认 40ms。
 
 ---
 
