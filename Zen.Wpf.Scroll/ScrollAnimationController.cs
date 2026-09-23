@@ -95,6 +95,7 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
     protected override void OnStart()
     {
         Tracker.SyncScrollableOffset();
+        MouseMoveThrottler.Enable();
         base.OnStart();
     }
 
@@ -102,6 +103,7 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
     {
         Tracker.ApplyAnimatedOffset();
         Tracker.CommitContentCacheScale();
+        MouseMoveThrottler.Disable();
         base.OnStop();
     }
 
