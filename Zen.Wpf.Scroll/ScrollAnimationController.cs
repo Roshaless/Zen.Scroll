@@ -114,6 +114,7 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
 
     protected override void OnStop()
     {
+        Tracker.FlushFrame();
         Tracker.ApplyAnimatedOffset();
         Tracker.CommitContentCacheScale();
         MouseMoveThrottler.Disable();
