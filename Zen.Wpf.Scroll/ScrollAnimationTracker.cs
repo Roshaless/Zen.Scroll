@@ -112,14 +112,7 @@ internal sealed class ScrollAnimationTracker
 
     public bool CanZoom(double delta)
     {
-        if (IsZoomDisabled) return false;
-
-        if (RootScrollViewer.HorizontalScrollBarVisibility == default || RootScrollViewer.VerticalScrollBarVisibility == default)
-        {
-            return delta > 0 ? ContentScale.LessThan(Client.MaximumScale) : ContentScale.GreaterThan(Client.MinimumScale);
-        }
-
-        return false;
+        return !IsZoomDisabled && (delta > 0 ? ContentScale.LessThan(Client.MaximumScale) : ContentScale.GreaterThan(Client.MinimumScale));
     }
 
     public void Initialize()
