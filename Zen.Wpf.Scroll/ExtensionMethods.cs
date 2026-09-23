@@ -1,8 +1,8 @@
-﻿using System.Runtime.CompilerServices;
-using System.Windows;
+﻿using System.Windows;
 
 #if !NET8_0_OR_GREATER
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 #endif
 
@@ -10,20 +10,25 @@ namespace Zen.Scroll;
 
 internal static class ExtensionMethods
 {
+    private static class FrameworkElementMethods
+    {
+        private static Func<FrameworkElement, string, DependencyObject> BuildGetTemplateChild()
+        {
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            var method = typeof(FrameworkElement).GetMethod("GetTemplateChild", flags, null, [typeof(string)], null)!;
+            var element = System.Linq.Expressions.Expression.Parameter(typeof(FrameworkElement), "element");
+            var name = System.Linq.Expressions.Expression.Parameter(typeof(string), "name");
+            var call = System.Linq.Expressions.Expression.Call(element, method, name);
+            return System.Linq.Expressions.Expression.Lambda<Func<FrameworkElement, string, DependencyObject>>(call, element, name).Compile();
+        }
+
+        public static readonly Func<FrameworkElement, string, DependencyObject> GetTemplateChild = BuildGetTemplateChild();
+    }
+
     extension(FrameworkElement element)
     {
-        public T? GetElement<T>(string name) where T : DependencyObject => (T?)GetTemplateChild(element, name);
-
-#if NET8_0_OR_GREATER
-        [UnsafeAccessor(UnsafeAccessorKind.Method)]
-        private static extern DependencyObject? GetTemplateChild(FrameworkElement e, string name);
-#else
-        private static DependencyObject? GetTemplateChild(FrameworkElement e, string name)
-        {
-            var internalFlag = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
-            return (DependencyObject?)typeof(FrameworkElement).GetMethod("GetTemplateChild", internalFlag).Invoke(e, [name]);
-        }
-#endif
+        public T? GetElement<T>(string name) where T : DependencyObject =>
+            (T?)FrameworkElementMethods.GetTemplateChild(element, name);
     }
 
     extension(Vector vector)
@@ -64,7 +69,7 @@ internal static class ExtensionMethods
         {
             const double Epsilon = 0.00000153;
             return value1.AreClose(value2, Epsilon);
-    }
+        }
 
         public bool AreClose(double value2, double epsilon)
         {
@@ -103,7 +108,7 @@ internal static class ExtensionMethods
         }
 
         public bool IsValidSize()
-    {
+        {
             return value1.IsFinite() && value1.GreaterThanOrClose(0);
         }
     }
