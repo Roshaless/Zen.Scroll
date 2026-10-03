@@ -121,10 +121,7 @@ public sealed class ScrollAnimationController : ScrollAnimationClient
         base.OnStop();
     }
 
-    protected override void OnFrameRendered()
-    {
-        Tracker.FlushFrame();
-    }
+    protected override void OnFrameRendered() => Tracker.FlushFrame();
 
     public override void UpdateScaleTarget(double scale) => Tracker.SetContentScale(scale);
 
