@@ -38,7 +38,6 @@
 #pragma warning disable SYSLIB1054
 #pragma warning disable CA2255
 
-using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
@@ -46,7 +45,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows.Input;
 using System.Windows.Interop;
-using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace System.Windows
@@ -56,29 +54,9 @@ namespace System.Windows
         [ModuleInitializer]
         public static void Initialize()
         {
-            Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
-            {
-                EventManager.RegisterClassHandler(
-                    typeof(Window),
-                    FrameworkElement.LoadedEvent,
-                    new RoutedEventHandler(OnWindowLoaded));
-
-                MouseHorizontalWheelHook.Initialize();
-                OnWindowLoaded(null!, EventArgs.Empty);
-            });
-        }
-
-        private static void OnWindowLoaded(object sender, EventArgs e)
-        {
-            if (Application.Current is null) return;
-
-            foreach (Window window in Application.Current.Windows)
-            {
-                if (window.IsLoaded)
-                {
-                    MouseHorizontalWheelHook.InitializeHook(window);
-                }
-            }
+            Dispatcher.CurrentDispatcher.BeginInvoke(
+                DispatcherPriority.ApplicationIdle,
+                MouseHorizontalWheelHook.Initialize);
         }
     }
 
@@ -89,6 +67,7 @@ namespace System.Windows
         {
             InputManager.Current.PreNotifyInput += OnPreNotifyInput;
             InputManager.Current.PostProcessInput += OnPostProcessInput;
+            ComponentDispatcher.ThreadFilterMessage += OnThreadFilterMessage;
         }
 
         private static void OnPreNotifyInput(object sender, NotifyInputEventArgs e)
@@ -111,7 +90,7 @@ namespace System.Windows
 
         private static void OnPostProcessInput(object sender, ProcessInputEventArgs e)
         {
-            // PreviewMouseHorizontalWheel --> MouseHorizontalWheel
+            // PreviewMouseWheel (Horizontal) --> MouseWheel (Horizontal)
             if (e.StagingItem.Input.RoutedEvent == Mouse.PreviewMouseWheelEvent)
             {
                 if (e.StagingItem.Input is { Handled: false, Device: MouseDevice mouseDevice } input)
@@ -119,7 +98,7 @@ namespace System.Windows
                     MouseWheelEventArgs previewWheel = (MouseWheelEventArgs)e.StagingItem.Input;
                     MouseWheelEventArgs wheel;
 
-                    if (previewWheel is MouseHorizontalWheelEventArgs)
+                    if (previewWheel.IsHorizontalMouseWheel)
                     {
                         wheel = new MouseHorizontalWheelEventArgs(mouseDevice, previewWheel.Timestamp, previewWheel.Delta)
                         {
@@ -128,7 +107,7 @@ namespace System.Windows
                     }
                     else
                     {
-                        wheel = new(mouseDevice, previewWheel.Timestamp, previewWheel.Delta)
+                        wheel = new MouseWheelEventArgs(mouseDevice, previewWheel.Timestamp, previewWheel.Delta)
                         {
                             RoutedEvent = Mouse.MouseWheelEvent
                         };
@@ -166,68 +145,26 @@ namespace System.Windows
         }
     }
 
-    // 全局 Hook 注册 & 卸载管理
+    // WM 消息接收 & 水平滚动报告
     file partial class MouseHorizontalWheelHook
     {
-        private static readonly ConcurrentDictionary<PresentationSource, MouseHorizontalWheelHook> Hooks = [];
-
-        public static void InitializeHook(Visual visual)
-        {
-            var source = (HwndSource)PresentationSource.FromVisual(visual);
-            if (source is null || Hooks.ContainsKey(source)) return;
-
-            Hooks.TryAdd(source, new MouseHorizontalWheelHook(source));
-        }
-
-        public static void UninitializeHook(HwndSource source)
-        {
-            if (source is not null && Hooks.TryRemove(source, out var hook))
-            {
-                hook.Dispose();
-            }
-        }
-    }
-
-    // WM 消息接收 & 水平滚动报告
-    file partial class MouseHorizontalWheelHook : IDisposable
-    {
-        private readonly HwndSource Source;
-
-        private MouseHorizontalWheelHook(HwndSource hwndSource)
-        {
-            Source = hwndSource;
-            Source.AddHook(WndProc);
-            Source.Disposed += OnDisposed;
-        }
-
-        public void Dispose()
-        {
-            Source.RemoveHook(WndProc);
-            Source.Disposed -= OnDisposed;
-        }
-
-        private void OnDisposed(object? sender, EventArgs e)
-        {
-            UninitializeHook(Source);
-        }
-
         // HorizontalWheelRotate = 0x20000
-        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        private static void OnThreadFilterMessage(ref MSG msg, ref bool handled)
         {
-            if (msg == 0x020E /*WM_MOUSEHWHEEL*/)
+            if (msg.message == 0x020E /*WM_MOUSEHWHEEL*/)
             {
-                var wheel = SignedHIWORD(wParam);
-                int x = SignedLOWORD(lParam);
-                int y = SignedHIWORD(lParam);
+                var wheel = SignedHIWORD(msg.wParam);
+                int x = SignedLOWORD(msg.lParam);
+                int y = SignedHIWORD(msg.lParam);
 
-                var provider = HwndSourceStatic.GetMouse(Source);
+                var provider = HwndSourceStatic.GetMouse(HwndSource.FromHwnd(msg.hwnd));
                 if (provider is not null)
                 {
                     var pt = new Drawing.Point() { X = x, Y = y };
-                    if (ScreenToClient(hwnd, ref pt))
+                    if (ScreenToClient(msg.hwnd, ref pt))
                     {
                         handled = HwndMouseInputProviderStatic.ReportInput(provider,
-                                                                           hwnd,
+                                                                           msg.hwnd,
                                                                            InputMode.Foreground,
                                                                            0x20000,
                                                                            pt.X,
@@ -236,8 +173,6 @@ namespace System.Windows
                     }
                 }
             }
-
-            return IntPtr.Zero;
         }
 
         private static short SignedHIWORD(IntPtr ptr)
@@ -288,7 +223,7 @@ namespace System.Windows
             }
         }
 
-        internal sealed class MouseHorizontalWheelEventArgs(MouseDevice mouse, int timestamp, int delta) : MouseWheelEventArgs(mouse, timestamp, delta);
+        file sealed class MouseHorizontalWheelEventArgs(MouseDevice mouse, int timestamp, int delta) : MouseWheelEventArgs(mouse, timestamp, delta);
     }
 
     file static class WPFAssemblies
@@ -326,7 +261,7 @@ namespace System.Windows
     {
         private static readonly Func<object, object> InputSourceGetter = ExpressionAccessor.BuildGetter(typeof(MouseDevice), "_inputSource");
         public static object? GetInputSource(object instance) => SecurityCriticalDataStatic.GetValueOrSelf(InputSourceGetter(instance));
-            }
+    }
     file static class HwndSourceStatic
     {
         private static readonly Func<object, object> MouseGetter = ExpressionAccessor.BuildGetter(typeof(HwndSource), "_mouse");
@@ -360,14 +295,14 @@ namespace System.Windows
             var reportInputMethod = ProviderType.GetMethod("ReportInput", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
             var call = Linq.Expressions.Expression.Call(typedProvider,
-                reportInputMethod,
-                hwnd,
-                mode,
-                timestamp,
+                                                        reportInputMethod,
+                                                        hwnd,
+                                                        mode,
+                                                        timestamp,
                                                         boxedActions,
-                x,
-                y,
-                wheel);
+                                                        x,
+                                                        y,
+                                                        wheel);
 
             return Linq.Expressions.Expression.Lambda<
                 Func<object, IntPtr, InputMode, int, object, int, int, int, bool>>(
@@ -384,15 +319,15 @@ namespace System.Windows
         public static object? GetValueOrSelf(object? instance)
         {
             if (instance is not null && instance.GetType() is { Name: "SecurityCriticalDataClass`1" } targetType)
-        {
-                var valueType = targetType.GetGenericArguments()[0];
-            if (TypedGetters.TryGetValue(valueType, out var getter) is not true)
             {
+                var valueType = targetType.GetGenericArguments()[0];
+                if (TypedGetters.TryGetValue(valueType, out var getter) is not true)
+                {
                     TypedGetters.Add(valueType, getter = ExpressionAccessor.BuildGetter(targetType, "_value"));
-            }
+                }
 
-            return getter(instance);
-        }
+                return getter(instance);
+            }
 
             return instance;
         }
