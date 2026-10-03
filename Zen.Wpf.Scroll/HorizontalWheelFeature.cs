@@ -325,31 +325,12 @@ namespace System.Windows
     file static class MouseDeviceStatic
     {
         private static readonly Func<object, object> InputSourceGetter = ExpressionAccessor.BuildGetter(typeof(MouseDevice), "_inputSource");
-        public static object? GetInputSource(object instance)
-        {
-            var result = InputSourceGetter(instance);
-            if (result is not null && result.GetType() != typeof(HwndSource))
-            {
-                return SecurityCriticalDataStatic.GetValue(result, typeof(PresentationSource));
+        public static object? GetInputSource(object instance) => SecurityCriticalDataStatic.GetValueOrSelf(InputSourceGetter(instance));
             }
-
-            return result;
-        }
-    }
     file static class HwndSourceStatic
     {
-        private static readonly Type ProviderType = WPFAssemblies.PresentationCoreAssembly.GetType("System.Windows.Interop.HwndMouseInputProvider")!;
         private static readonly Func<object, object> MouseGetter = ExpressionAccessor.BuildGetter(typeof(HwndSource), "_mouse");
-        public static object? GetMouse(object instance)
-        {
-            var result = MouseGetter(instance);
-            if (result is not null && result.GetType() != ProviderType)
-            {
-                return SecurityCriticalDataStatic.GetValue(result, ProviderType);
-            }
-
-            return result;
-        }
+        public static object? GetMouse(object instance) => SecurityCriticalDataStatic.GetValueOrSelf(MouseGetter(instance));
     }
     file static class HwndMouseInputProviderStatic
     {
@@ -370,6 +351,7 @@ namespace System.Windows
             var mode = Linq.Expressions.Expression.Parameter(typeof(InputMode), "mode");
             var timestamp = Linq.Expressions.Expression.Parameter(typeof(int), "timestamp");
             var actions = Linq.Expressions.Expression.Parameter(typeof(object), "actions");
+            var boxedActions = Linq.Expressions.Expression.Convert(actions, RawMouseActionsType); // object → RawMouseActions
             var x = Linq.Expressions.Expression.Parameter(typeof(int), "x");
             var y = Linq.Expressions.Expression.Parameter(typeof(int), "y");
             var wheel = Linq.Expressions.Expression.Parameter(typeof(int), "wheel");
@@ -377,13 +359,12 @@ namespace System.Windows
             var typedProvider = Linq.Expressions.Expression.Convert(provider, ProviderType);
             var reportInputMethod = ProviderType.GetMethod("ReportInput", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
-            var call = Linq.Expressions.Expression.Call(
-                typedProvider,
+            var call = Linq.Expressions.Expression.Call(typedProvider,
                 reportInputMethod,
                 hwnd,
                 mode,
                 timestamp,
-                Linq.Expressions.Expression.Convert(actions, RawMouseActionsType),   // object → RawMouseActions
+                                                        boxedActions,
                 x,
                 y,
                 wheel);
@@ -397,14 +378,23 @@ namespace System.Windows
     {
 #pragma warning disable IDE0001
         private static readonly System.Collections.Generic.Dictionary<Type, Func<object, object>> TypedGetters = [];
-        public static object GetValue(object instance, Type valueType)
+
+        // For .NET Framework 4.x, the SecurityCriticalDataClass<T> is used to wrap sensitive data.
+        // This method checks if the instance is of that type and retrieves the underlying value if so.
+        public static object? GetValueOrSelf(object? instance)
         {
+            if (instance is not null && instance.GetType() is { Name: "SecurityCriticalDataClass`1" } targetType)
+        {
+                var valueType = targetType.GetGenericArguments()[0];
             if (TypedGetters.TryGetValue(valueType, out var getter) is not true)
             {
-                TypedGetters.Add(valueType, getter = ExpressionAccessor.BuildGetter(instance.GetType(), "Value"));
+                    TypedGetters.Add(valueType, getter = ExpressionAccessor.BuildGetter(targetType, "_value"));
             }
 
             return getter(instance);
+        }
+
+            return instance;
         }
 #pragma warning restore IDE0001
     }
