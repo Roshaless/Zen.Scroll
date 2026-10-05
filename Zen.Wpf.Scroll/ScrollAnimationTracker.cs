@@ -14,7 +14,7 @@ namespace Zen.Scroll;
 internal sealed class ScrollAnimationTracker
 {
     private readonly ScrollViewer RootScrollViewer;
-    private readonly ScrollAnimationClient Client;
+    private readonly ScrollAnimationController Client;
     private readonly ScrollBarTakeover ScrollBarTakeover;
     private readonly MatrixTransform ContentTransform;
     private readonly DependencyPropertyDescriptor ContentPropertyDescriptor;
@@ -61,10 +61,10 @@ internal sealed class ScrollAnimationTracker
 
     public bool IsZoomDisabled { get; private set; }
 
-    public ScrollAnimationTracker(ScrollViewer scrollViewer, ScrollAnimationClient client)
+    public ScrollAnimationTracker(ScrollViewer scrollViewer, ScrollAnimationController controller)
     {
         RootScrollViewer = scrollViewer;
-        Client = client;
+        Client = controller;
         ContentPropertyDescriptor = DependencyPropertyDescriptor.FromProperty(
             ContentPresenter.ContentProperty, typeof(ScrollContentPresenter));
         TemplatePropertyDescriptor = DependencyPropertyDescriptor.FromProperty(
@@ -150,6 +150,7 @@ internal sealed class ScrollAnimationTracker
         TemplatePropertyDescriptor.AddValueChanged(RootScrollViewer, OnTemplateChanged);
 
         OnScrollContentChanged(null, e);
+        Client.RefreshTuning();
     }
 
     private void OnUnloaded(object? sender, EventArgs e)
@@ -301,7 +302,10 @@ internal sealed class ScrollAnimationTracker
         ScrollableDirty = true;
 
         if (Client.IsActive is not true)
+        {
             FlushFrame();
+            CommitContentCacheScale();
+        }
     }
 
     public void FlushFrame()
