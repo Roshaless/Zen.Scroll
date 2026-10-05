@@ -15,10 +15,12 @@
 		<IncludeSymbols>true</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 		<RepositoryUrl>https://github.com/Roshaless/Zen.Scroll</RepositoryUrl>
-		<PackageTags>wpf, scroll, animation, scrollviewer, xaml</PackageTags>
+		<PackageTags>wpf, scroll, animation, scrollviewer, xaml, ui, smooth</PackageTags>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<Description>Smooth scrolling and zooming for ScrollViewer</Description>
+		<Copyright>Copyright © Roshaless 2026</Copyright>
 	</PropertyGroup>
 	
 	<ItemGroup>
