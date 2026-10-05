@@ -25,8 +25,8 @@ public abstract class MotionAnimation
     public void Start()
     {
         StartTimestamp = Stopwatch.GetTimestamp();
-        if (IsActive) return;
-        if (CheckAccess())
+
+        if (!IsActive && CheckAccess())
         {
             IsActive = true;
             ScrollClient.Start(this);
@@ -36,8 +36,7 @@ public abstract class MotionAnimation
 
     public void Stop()
     {
-        if (IsActive is not true) return;
-        if (CheckAccess())
+        if (IsActive && CheckAccess())
         {
             IsActive = false;
             ScrollClient.Stop(this);
