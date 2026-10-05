@@ -9,7 +9,7 @@ public static class MouseMoveThrottler
 {
     private static long LastPassTick;
     private static int EnabledState;
-    public static long IntervalMs { get; set; } = 40;
+    public static long IntervalMs { get; set; } = 80;
     public static bool IsEnabled => Volatile.Read(ref EnabledState) > 0;
 
     [EditorBrowsable(EditorBrowsableState.Never)]
@@ -104,11 +104,9 @@ public static class MouseMoveThrottler
     {
         private static readonly Type RawMouseInputReportType = PresentationCoreAssembly.GetType("System.Windows.Input.RawMouseInputReport")!;
         private static readonly Func<object, object> ActionsGetter = ExpressionAccessor.BuildGetter(RawMouseInputReportType, "Actions");
-        private static readonly Func<object, int> WheelGetter = ExpressionAccessor.BuildGetter<int>(RawMouseInputReportType, "Wheel");
         private static readonly Func<object, int> XGetter = ExpressionAccessor.BuildGetter<int>(RawMouseInputReportType, "X");
         private static readonly Func<object, int> YGetter = ExpressionAccessor.BuildGetter<int>(RawMouseInputReportType, "Y");
         public static object GetActions(object instance) => ActionsGetter(instance);
-        public static int GetWheel(object instance) => WheelGetter(instance);
         public static int GetX(object instance) => XGetter(instance);
         public static int GetY(object instance) => YGetter(instance);
 
