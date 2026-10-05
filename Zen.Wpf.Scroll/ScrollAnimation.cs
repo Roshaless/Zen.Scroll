@@ -18,9 +18,10 @@ public abstract class ScrollAnimation : MotionAnimation
         DependencyProperty.RegisterAttached("IsEnabled", typeof(bool),
             typeof(ScrollAnimation), new PropertyMetadata(OnIsEnabledChanged));
 
-    private static readonly DependencyProperty ControllerProperty =
-        DependencyProperty.RegisterAttached("Controller", typeof(ScrollAnimationController),
+    private static readonly DependencyPropertyKey ControllerPropertyKey =
+        DependencyProperty.RegisterAttachedReadOnly("Controller", typeof(ScrollAnimationController),
             typeof(ScrollAnimation), new PropertyMetadata(null));
+    public static readonly DependencyProperty ControllerProperty = ControllerPropertyKey.DependencyProperty;
 
     private static void OnIsEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -29,11 +30,8 @@ public abstract class ScrollAnimation : MotionAnimation
             return;
         }
 
-        if (scrollViewer.GetValue(ControllerProperty) is not ScrollAnimationController controller)
-        {
-            controller = new ScrollAnimationController(scrollViewer);
-            scrollViewer.SetValue(ControllerProperty, controller);
-        }
+        // Get the controller for this ScrollViewer.
+        var controller = GetController(scrollViewer);
 
         // On disable only the animations are cleared and deactivated; the controller itself is kept
         // so that re-enabling reuses the same instance.
@@ -49,6 +47,17 @@ public abstract class ScrollAnimation : MotionAnimation
             controller.ScrollAnimation = null;
             controller.SetIsEnabled(false);
         }
+    }
+
+    public static ScrollAnimationController GetController(ScrollViewer scrollViewer)
+    {
+        if (scrollViewer.GetValue(ControllerProperty) is not ScrollAnimationController controller)
+        {
+            controller = new ScrollAnimationController(scrollViewer);
+            scrollViewer.SetValue(ControllerPropertyKey, controller);
+        }
+
+        return controller;
     }
 
     public static bool GetIsEnabled(ScrollViewer scrollViewer) =>
