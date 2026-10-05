@@ -14,7 +14,7 @@ namespace Zen.Scroll;
 internal sealed class ScrollAnimationTracker
 {
     private readonly ScrollViewer RootScrollViewer;
-    private readonly ScrollAnimationController Client;
+    private readonly ScrollAnimationController Controller;
     private readonly ScrollBarTakeover ScrollBarTakeover;
     private readonly MatrixTransform ContentTransform;
     private readonly DependencyPropertyDescriptor ContentPropertyDescriptor;
@@ -55,7 +55,7 @@ internal sealed class ScrollAnimationTracker
         (ScrollContentPresenter?.ViewportWidth ?? 0,
         ScrollContentPresenter?.ViewportHeight ?? 0);
 
-    public bool IsAnimating => Client.IsActive;
+    public bool IsAnimating => Controller.IsActive;
 
     public bool IsRootScrollViewer { get; private set; }
 
@@ -64,7 +64,7 @@ internal sealed class ScrollAnimationTracker
     public ScrollAnimationTracker(ScrollViewer scrollViewer, ScrollAnimationController controller)
     {
         RootScrollViewer = scrollViewer;
-        Client = controller;
+        Controller = controller;
         ContentPropertyDescriptor = DependencyPropertyDescriptor.FromProperty(
             ContentPresenter.ContentProperty, typeof(ScrollContentPresenter));
         TemplatePropertyDescriptor = DependencyPropertyDescriptor.FromProperty(
@@ -112,7 +112,7 @@ internal sealed class ScrollAnimationTracker
 
     public bool CanZoom(double delta)
     {
-        return !IsZoomDisabled && (delta > 0 ? ContentScale.LessThan(Client.MaximumScale) : ContentScale.GreaterThan(Client.MinimumScale));
+        return !IsZoomDisabled && (delta > 0 ? ContentScale.LessThan(Controller.MaximumScale) : ContentScale.GreaterThan(Controller.MinimumScale));
     }
 
     public void Initialize()
@@ -150,7 +150,7 @@ internal sealed class ScrollAnimationTracker
         TemplatePropertyDescriptor.AddValueChanged(RootScrollViewer, OnTemplateChanged);
 
         OnScrollContentChanged(null, e);
-        Client.RefreshTuning();
+        Controller.RefreshTuning();
     }
 
     private void OnUnloaded(object? sender, EventArgs e)
@@ -266,7 +266,7 @@ internal sealed class ScrollAnimationTracker
             .ConstrainedBetween(default, ScrollableOffset);
         HasPendingScrollOffset = true;
 
-        if (Client.IsActive is not true)
+        if (Controller.IsActive is not true)
             FlushFrame();
     }
 
@@ -290,7 +290,7 @@ internal sealed class ScrollAnimationTracker
         if (IsInitialized is not true) return;
 
         scale = scale.IsValidSize() ? scale : ContentScale;
-        scale = Math.Clamp(scale, Client.MinimumScale, Client.MaximumScale);
+        scale = Math.Clamp(scale, Controller.MinimumScale, Controller.MaximumScale);
 
         // Only record the pending scale: folding the anchor offset into PendingScrollOffset here
         // would clobber the frame's scroll target.
@@ -301,7 +301,7 @@ internal sealed class ScrollAnimationTracker
         HasScaleChanged = true;
         ScrollableDirty = true;
 
-        if (Client.IsActive is not true)
+        if (Controller.IsActive is not true)
         {
             FlushFrame();
             CommitContentCacheScale();
@@ -433,7 +433,7 @@ internal sealed class ScrollAnimationTracker
         // While animations are running, ScrollOffset is maintained by LogicalScroll; reading back the
         // ScrollViewer's async offset here would overwrite the just-committed value and accumulate drift
         // (seen as the content shifting away after zooming in and back out).
-        if (Client.IsActive)
+        if (Controller.IsActive)
             return;
 
         ScrollOffset = new Vector(RootScrollViewer.HorizontalOffset, RootScrollViewer.VerticalOffset);
