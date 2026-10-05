@@ -320,10 +320,9 @@ namespace System.Windows
         {
             if (instance is not null && instance.GetType() is { Name: "SecurityCriticalDataClass`1" } targetType)
             {
-                var valueType = targetType.GetGenericArguments()[0];
-                if (TypedGetters.TryGetValue(valueType, out var getter) is not true)
+                if (TypedGetters.TryGetValue(targetType, out var getter) is not true)
                 {
-                    TypedGetters.Add(valueType, getter = ExpressionAccessor.BuildGetter(targetType, "_value"));
+                    TypedGetters.Add(targetType, getter = ExpressionAccessor.BuildGetter(targetType, "_value"));
                 }
 
                 return getter(instance);
